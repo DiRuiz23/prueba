@@ -2,22 +2,13 @@ package com.proyecto.servicios.model.gestopago;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.xml.bind.annotation.XmlAccessType;
-import jakarta.xml.bind.annotation.XmlAccessorType;
-import jakarta.xml.bind.annotation.XmlElement;
-import jakarta.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
 
-/**
- * Modelo JAXB para deserializar la respuesta XML del endpoint getProductList.do de GestoPago.
- *
- * El elemento raíz "response" asume que la respuesta envuelve la lista de productos.
- * Ajustar si el XML real utiliza un nombre de elemento raíz distinto.
- */
 @XmlRootElement(name = "RESPONSE")
 @XmlAccessorType(XmlAccessType.FIELD)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -26,72 +17,133 @@ import java.util.List;
 @NoArgsConstructor
 public class CatProductXml {
 
-    @XmlElement(name = "status")
-    private String status;
-
-    @XmlElement(name = "message")
-    private String message;
-
-    @XmlElement(name = "product")
-    @JsonProperty("products")
-    private List<ProductoItem> products;
+    /**
+     * Elemento anidado que contiene el código y texto de resultado de la operación.
+     */
+    @XmlElement(name = "MENSAJE")
+    private Mensaje mensaje;
 
     /**
-     * Representa un producto individual dentro del catálogo de GestoPago.
-     *
-     * Campos según documentación oficial de getProductList:
-     *   - producto         : nombre del producto
-     *   - servicio         : nombre del servicio
-     *   - idServicio       : identificador del servicio
-     *   - idProducto       : identificador del producto
-     *   - idCatTipoServicio: identificador del tipo de servicio
-     *   - tipoFront        : tipo de payload requerido
-     *   - hasDigitoVerificador: si requiere dígito verificador
-     *   - precio           : precio final del producto (string, hasta 15 chars)
-     *   - showAyuda        : si requiere ayuda de verificación
-     *
-     * Campos marcados como @Deprecated en la documentación (se incluyen por compatibilidad):
-     *   - tipoReferencia   : tipo de payload (reemplazado por tipoFront)
+     * Wrapper del listado de productos. Contiene N elementos {@code <producto>}.
+     */
+    @XmlElement(name = "PRODUCTOS")
+    private ProductosWrapper productosWrapper;
+
+    /**
+     * Retorna el código de resultado (ej. "01" = éxito).
+     */
+    public String getStatus() {
+        return mensaje != null ? mensaje.getCodigo() : null;
+    }
+
+    /**
+     * Retorna el texto descriptivo del resultado.
+     */
+    public String getMessage() {
+        return mensaje != null ? mensaje.getTexto() : null;
+    }
+
+    /**
+     * Retorna la lista plana de productos para uso en el servicio.
+     */
+    @JsonProperty("products")
+    public List<ProductoItem> getProducts() {
+        return productosWrapper != null ? productosWrapper.getProductos() : null;
+    }
+
+    // =========================================================================
+    // Clases internas de soporte
+    // =========================================================================
+
+    /**
+     * Elemento {@code <MENSAJE>} con código y texto del resultado de la operación.
      */
     @XmlAccessorType(XmlAccessType.FIELD)
     @Getter
     @Setter
     @NoArgsConstructor
-    public static class ProductoItem {
+    public static class Mensaje {
+
+        @XmlElement(name = "CODIGO")
+        private String codigo;
+
+        @XmlElement(name = "TEXTO")
+        private String texto;
+    }
+
+    /**
+     * Elemento wrapper {@code <PRODUCTOS>} que contiene la lista de
+     * {@code <producto>}.
+     */
+    @XmlAccessorType(XmlAccessType.FIELD)
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class ProductosWrapper {
 
         @XmlElement(name = "producto")
+        private List<ProductoItem> productos;
+    }
+
+    /**
+     * Representa un producto individual del catálogo de GestoPago.
+     *
+     * Los campos son ATRIBUTOS del elemento XML {@code <producto>},
+     * por eso se usa {@code XmlAccessType.NONE} y {@code @XmlAttribute}.
+     *
+     * Campos:
+     * - producto : nombre del producto
+     * - servicio : nombre del servicio
+     * - idServicio : identificador del servicio
+     * - idProducto : identificador del producto
+     * - idCatTipoServicio : identificador del tipo de servicio
+     * - tipoFront : tipo de payload requerido por el front
+     * - hasDigitoVerificador: si el producto requiere dígito verificador
+     * - precio : precio final del producto
+     * - showAyuda : si se debe mostrar ayuda
+     * - tipoReferencia : @Deprecated, reemplazado por tipoFront
+     * - legend : texto informativo (elemento hijo CDATA)
+     */
+    @XmlAccessorType(XmlAccessType.NONE)
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class ProductoItem {
+
+        @XmlAttribute(name = "producto")
         private String producto;
 
-        @XmlElement(name = "servicio")
+        @XmlAttribute(name = "servicio")
         private String servicio;
 
-        @XmlElement(name = "idServicio")
+        @XmlAttribute(name = "idServicio")
         private Integer idServicio;
 
-        @XmlElement(name = "idProducto")
+        @XmlAttribute(name = "idProducto")
         private Integer idProducto;
 
-        @XmlElement(name = "idCatTipoServicio")
+        @XmlAttribute(name = "idCatTipoServicio")
         private Integer idCatTipoServicio;
 
-        @XmlElement(name = "tipoFront")
+        @XmlAttribute(name = "tipoFront")
         private Integer tipoFront;
 
-        @XmlElement(name = "hasDigitoVerificador")
+        @XmlAttribute(name = "hasDigitoVerificador")
         private Boolean hasDigitoVerificador;
 
-        @XmlElement(name = "precio")
+        @XmlAttribute(name = "precio")
         private String precio;
 
-        @XmlElement(name = "showAyuda")
+        @XmlAttribute(name = "showAyuda")
         private Boolean showAyuda;
 
-        /**
-         * @deprecated Según documentación de GestoPago: "Will be deleted on next version".
-         * Usar tipoFront en su lugar.
-         */
+        /** @deprecated Según documentación GestoPago: usar tipoFront en su lugar. */
         @Deprecated
-        @XmlElement(name = "tipoReferencia")
+        @XmlAttribute(name = "tipoReferencia")
         private String tipoReferencia;
+
+        /** Texto informativo del producto (CDATA). */
+        @XmlElement(name = "legend")
+        private String legend;
     }
 }

@@ -78,6 +78,9 @@ public class GestoPagoProductosServiceImpl implements GestoPagoProductosService 
 
             CatProductXml catProductXml = parsearXml(xmlResponse);
 
+            int totalProductos = catProductXml.getProducts() != null ? catProductXml.getProducts().size() : 0;
+            log.info("Catálogo parseado: codigo={}, productos={}", catProductXml.getStatus(), totalProductos);
+
             CatProductDocument documento = new CatProductDocument();
             documento.setProducts(catProductXml.getProducts());
             documento.setStatus(catProductXml.getStatus());
