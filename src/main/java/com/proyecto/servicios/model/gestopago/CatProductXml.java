@@ -18,7 +18,7 @@ import java.util.List;
  * El elemento raíz "response" asume que la respuesta envuelve la lista de productos.
  * Ajustar si el XML real utiliza un nombre de elemento raíz distinto.
  */
-@XmlRootElement(name = "response")
+@XmlRootElement(name = "RESPONSE")
 @XmlAccessorType(XmlAccessType.FIELD)
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Getter

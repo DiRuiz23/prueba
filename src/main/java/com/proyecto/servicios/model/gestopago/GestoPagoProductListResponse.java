@@ -1,5 +1,6 @@
 package com.proyecto.servicios.model.gestopago;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,6 +21,10 @@ public class GestoPagoProductListResponse {
 
     private String status;
     private String mensaje;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime fechaConsulta;
+
     private List<CatProductXml.ProductoItem> products;
 }
+
