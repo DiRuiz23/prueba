@@ -1,32 +1,24 @@
 package com.proyecto.servicios.service.banco;
 
-import com.proyecto.servicios.entity.banco.Cuenta;
-import com.proyecto.servicios.model.banco.CuentaResponse;
-import com.proyecto.servicios.model.banco.CrearCuentaRequest;
-
-import java.math.BigDecimal;
-import java.util.List;
+import com.proyecto.servicios.dto.request.banco.*;
+import com.proyecto.servicios.dto.response.PaginaResponse;
+import com.proyecto.servicios.dto.response.banco.CuentaResponse;
+import com.proyecto.servicios.dto.response.banco.SaldoResponse;
 
 public interface CuentaService {
 
     /** Consulta una cuenta por su número único. */
-    CuentaResponse consultarPorNumeroCuenta(String numeroCuenta);
+    CuentaResponse consultarPorNumeroCuenta(NumeroCuentaRequest request);
 
-    /** Consulta todas las cuentas asociadas a un cliente. */
-    List<CuentaResponse> consultarPorClienteId(Long clienteId);
-
-    /** Consulta cuentas filtradas por estatus. */
-    List<CuentaResponse> consultarPorEstatus(Cuenta.EstatusCuenta estatus);
-
-    /** Consulta todas las cuentas del sistema. */
-    List<CuentaResponse> consultarTodas();
+    /** Consulta cuentas aplicando filtros combinables y paginación. */
+    PaginaResponse<CuentaResponse> consultar(CuentaFiltroRequest request);
 
     /** Crea una cuenta bancaria adicional para un cliente activo existente. */
     CuentaResponse crearCuentaAdicional(CrearCuentaRequest request);
 
     /** Cambia el estatus de una cuenta (ACTIVA, BLOQUEADA, INACTIVA). */
-    CuentaResponse cambiarEstatusCuenta(String numeroCuenta, Cuenta.EstatusCuenta nuevoEstatus);
+    CuentaResponse cambiarEstatusCuenta(ActualizarEstatusCuentaRequest request);
 
     /** Consulta el saldo disponible de una cuenta. */
-    BigDecimal consultarSaldo(String numeroCuenta);
+    SaldoResponse consultarSaldo(NumeroCuentaRequest request);
 }

@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class ClienteYaRegistradoException extends RuntimeException {
-    public ClienteYaRegistradoException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.RecursoDuplicadoException;
+
+/**
+ * El cliente ya se encuentra registrado.
+ */
+public class ClienteYaRegistradoException extends RecursoDuplicadoException {
+
+    public ClienteYaRegistradoException(String mensaje) {
+        super(mensaje);
     }
 }

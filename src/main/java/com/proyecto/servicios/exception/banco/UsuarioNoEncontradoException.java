@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class UsuarioNoEncontradoException extends RuntimeException {
-    public UsuarioNoEncontradoException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.RecursoNoEncontradoException;
+
+/**
+ * No existe el usuario de acceso solicitado.
+ */
+public class UsuarioNoEncontradoException extends RecursoNoEncontradoException {
+
+    public UsuarioNoEncontradoException(String mensaje) {
+        super(mensaje);
     }
 }

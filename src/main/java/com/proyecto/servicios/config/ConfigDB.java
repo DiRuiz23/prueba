@@ -27,10 +27,10 @@ import java.util.Map;
 @EnableTransactionManagement
 @EnableJpaRepositories(
         basePackages = {
-                "com.proyecto.servicios.repositorys.sf",
-                "com.proyecto.servicios.repositorys.gestopago",
-                "com.proyecto.servicios.repositorys.banco",
-                "com.proyecto.servicios.repositorys.catalogos"
+                "com.proyecto.servicios.repository.persona",
+                "com.proyecto.servicios.repository.gestopago",
+                "com.proyecto.servicios.repository.banco",
+                "com.proyecto.servicios.repository.catalogos"
         },
         transactionManagerRef = "sfTransactionManager",
         entityManagerFactoryRef = "sfEntityManagerFactory"
@@ -68,7 +68,7 @@ public class ConfigDB {
         try{
           em.setDataSource(sfDatasource());
           em.setPackagesToScan(
-                  "com.proyecto.servicios.entity.sf",
+                  "com.proyecto.servicios.entity.persona",
                   "com.proyecto.servicios.entity.gestopago",
                   "com.proyecto.servicios.entity.banco",
                   "com.proyecto.servicios.entity.catalogos"

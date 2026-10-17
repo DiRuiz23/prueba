@@ -1,7 +1,7 @@
 package com.proyecto.servicios.config.security;
 
 import com.proyecto.servicios.entity.banco.Usuario;
-import com.proyecto.servicios.repositorys.banco.UsuarioRepository;
+import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;

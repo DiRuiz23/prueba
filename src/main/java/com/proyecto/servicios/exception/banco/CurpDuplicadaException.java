@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class CurpDuplicadaException extends RuntimeException {
-    public CurpDuplicadaException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.RecursoDuplicadoException;
+
+/**
+ * La CURP ya esta registrada.
+ */
+public class CurpDuplicadaException extends RecursoDuplicadoException {
+
+    public CurpDuplicadaException(String mensaje) {
+        super(mensaje);
     }
 }

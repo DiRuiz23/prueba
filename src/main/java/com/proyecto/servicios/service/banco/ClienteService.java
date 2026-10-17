@@ -1,11 +1,8 @@
 package com.proyecto.servicios.service.banco;
 
-import com.proyecto.servicios.model.banco.ActualizarClientePatchRequest;
-import com.proyecto.servicios.model.banco.ClienteResponse;
-import com.proyecto.servicios.model.banco.RegistroClienteRequest;
-
-import java.time.OffsetDateTime;
-import java.util.List;
+import com.proyecto.servicios.dto.request.banco.*;
+import com.proyecto.servicios.dto.response.PaginaResponse;
+import com.proyecto.servicios.dto.response.banco.ClienteResponse;
 
 public interface ClienteService {
 
@@ -13,29 +10,19 @@ public interface ClienteService {
     ClienteResponse registrarCliente(RegistroClienteRequest request);
 
     /** Consulta un cliente por su ID numérico. */
-    ClienteResponse consultarPorId(Long id);
+    ClienteResponse consultarPorId(ClienteIdRequest request);
 
     /** Busca un cliente por el número de cuenta bancaria asociada. */
-    ClienteResponse consultarPorNumeroCuenta(String numeroCuenta);
+    ClienteResponse consultarPorNumeroCuenta(NumeroCuentaRequest request);
 
     /**
-     * Busca clientes aplicando filtros opcionales dinámicos.
-     * Si ningún filtro aplica, retorna todos los clientes.
+     * Búsqueda dinámica paginada aplicando los criterios enviados en el cuerpo.
      */
-    List<ClienteResponse> buscarConFiltros(
-            String nombre,
-            String apellidoPaterno,
-            String apellidoMaterno,
-            String curp,
-            String rfc,
-            Boolean soloActivos,
-            OffsetDateTime fechaInicio,
-            OffsetDateTime fechaFin
-    );
+    PaginaResponse<ClienteResponse> consultar(ClienteFiltroRequest request);
 
-    /** Aplica una actualización parcial (PATCH) al cliente. CURP y RFC son inmutables. */
-    ClienteResponse actualizarClienteParcial(Long id, ActualizarClientePatchRequest patch);
+    /** Aplica una actualización a los campos modificables del cliente. CURP y RFC son inmutables. */
+    ClienteResponse actualizarCliente(ActualizarClienteRequest request);
 
-    /** Realiza la baja lógica del cliente, desactivando su usuario y cuentas. */
-    void bajaLogicaCliente(Long id);
+    /** Realiza la baja lógica del cliente, desactivando su usuario y cuentas asociadas. */
+    void bajaLogicaCliente(ClienteIdRequest request);
 }

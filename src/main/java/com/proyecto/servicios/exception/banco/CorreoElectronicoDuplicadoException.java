@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class CorreoElectronicoDuplicadoException extends RuntimeException {
-    public CorreoElectronicoDuplicadoException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.RecursoDuplicadoException;
+
+/**
+ * El correo electronico ya esta en uso.
+ */
+public class CorreoElectronicoDuplicadoException extends RecursoDuplicadoException {
+
+    public CorreoElectronicoDuplicadoException(String mensaje) {
+        super(mensaje);
     }
 }

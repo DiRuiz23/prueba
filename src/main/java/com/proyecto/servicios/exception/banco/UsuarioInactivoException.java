@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class UsuarioInactivoException extends RuntimeException {
-    public UsuarioInactivoException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.AccesoDenegadoException;
+
+/**
+ * El usuario esta inactivo y no puede autenticarse.
+ */
+public class UsuarioInactivoException extends AccesoDenegadoException {
+
+    public UsuarioInactivoException(String mensaje) {
+        super(mensaje);
     }
 }

@@ -1,24 +1,27 @@
 package com.proyecto.servicios.service.banco.impl;
 
+import com.proyecto.servicios.dto.request.banco.AgregarUsuarioRequest;
+import com.proyecto.servicios.dto.request.banco.UsuarioFiltroRequest;
+import com.proyecto.servicios.dto.response.PaginaResponse;
+import com.proyecto.servicios.dto.response.banco.UsuarioResponse;
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.exception.banco.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.banco.CorreoElectronicoDuplicadoException;
-import com.proyecto.servicios.exception.banco.RecursoDuplicadoException;
-import com.proyecto.servicios.exception.banco.UsuarioNoEncontradoException;
-import com.proyecto.servicios.model.banco.AgregarUsuarioRequest;
-import com.proyecto.servicios.model.banco.UsuarioResponse;
-import com.proyecto.servicios.repositorys.banco.ClienteRepository;
-import com.proyecto.servicios.repositorys.banco.UsuarioRepository;
+import com.proyecto.servicios.exception.RecursoDuplicadoException;
+import com.proyecto.servicios.repository.banco.ClienteRepository;
+import com.proyecto.servicios.repository.banco.UsuarioRepository;
+import com.proyecto.servicios.repository.specification.UsuarioSpecification;
 import com.proyecto.servicios.service.banco.UsuarioService;
+import com.proyecto.servicios.util.PaginacionUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,52 +34,38 @@ public class UsuarioServiceImpl implements UsuarioService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UsuarioResponse> filtrar(String correo, Boolean activo, Long clienteId) {
-        List<Usuario> usuarios;
+    public PaginaResponse<UsuarioResponse> consultar(UsuarioFiltroRequest request) {
+        Specification<Usuario> spec = Specification.allOf(
+                UsuarioSpecification.correoContiene(request.getCorreo()),
+                UsuarioSpecification.activoIgual(request.getActivo()),
+                UsuarioSpecification.clienteIgual(request.getClienteId())
+        );
 
-        if (clienteId != null) {
-            // Filtro exacto por cliente
-            usuarios = usuarioRepository.findByClienteId(clienteId)
-                    .map(List::of)
-                    .orElse(List.of());
-        } else if (correo != null && !correo.isBlank()) {
-            // Búsqueda parcial por correo
-            usuarios = usuarioRepository.findByCorreoContainingIgnoreCase(correo);
-        } else if (activo != null) {
-            // Filtro por estado activo/inactivo
-            usuarios = usuarioRepository.findByActivo(activo);
-        } else {
-            // Sin filtros: retornar todos
-            usuarios = usuarioRepository.findAll();
-        }
+        Pageable pageable = PaginacionUtils.crearPageable(
+                request.getPaginacion(), request.getOrdenarPor(), "id");
 
-        return usuarios.stream()
-                .map(UsuarioResponse::from)
-                .collect(Collectors.toList());
+        Page<Usuario> pagina = usuarioRepository.findAll(spec, pageable);
+        return PaginaResponse.desdePagina(pagina, UsuarioResponse::desdeEntidad);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public UsuarioResponse agregarUsuario(AgregarUsuarioRequest request) {
-        // 1. Verificar que el cliente exista
         Cliente cliente = clienteRepository.findById(request.getClienteId())
                 .orElseThrow(() -> new ClienteNoEncontradoException(
                         "No se encontró el cliente con ID: " + request.getClienteId()));
 
-        // 2. Verificar que el cliente no tenga ya un usuario asociado
-        if (usuarioRepository.findByClienteId(cliente.getId()).isPresent()) {
+        if (usuarioRepository.existsByClienteId(cliente.getId())) {
             throw new RecursoDuplicadoException(
                     "El cliente ID " + cliente.getId() + " ya tiene un usuario de acceso asociado.");
         }
 
-        // 3. Verificar que el correo no esté en uso
         String correoNormalizado = request.getCorreo().trim().toLowerCase();
         if (usuarioRepository.existsByCorreo(correoNormalizado)) {
             throw new CorreoElectronicoDuplicadoException(
                     "El correo '" + correoNormalizado + "' ya está registrado en el sistema.");
         }
 
-        // 4. Crear y persistir el usuario
         Usuario usuario = Usuario.builder()
                 .cliente(cliente)
                 .correo(correoNormalizado)
@@ -87,6 +76,6 @@ public class UsuarioServiceImpl implements UsuarioService {
         usuario = usuarioRepository.save(usuario);
         log.info("Usuario creado para el cliente ID: {}", cliente.getId());
 
-        return UsuarioResponse.from(usuario);
+        return UsuarioResponse.desdeEntidad(usuario);
     }
 }

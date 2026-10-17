@@ -1,6 +1,6 @@
 package com.proyecto.servicios.client;
 
-import com.proyecto.servicios.model.gestopago.GestoPagoProductListResponse;
+import com.proyecto.servicios.dto.response.gestopago.GestoPagoProductListResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;

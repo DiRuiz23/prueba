@@ -1,7 +1,13 @@
 package com.proyecto.servicios.exception.banco;
 
-public class RfcDuplicadoException extends RuntimeException {
-    public RfcDuplicadoException(String message) {
-        super(message);
+import com.proyecto.servicios.exception.RecursoDuplicadoException;
+
+/**
+ * El RFC ya esta registrado.
+ */
+public class RfcDuplicadoException extends RecursoDuplicadoException {
+
+    public RfcDuplicadoException(String mensaje) {
+        super(mensaje);
     }
 }

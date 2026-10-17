@@ -2,8 +2,8 @@ package com.proyecto.servicios.service.banco.impl;
 
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.DatosBiometricos;
-import com.proyecto.servicios.exception.banco.ReglaNegocioException;
-import com.proyecto.servicios.repositorys.banco.DatosBiometricosRepository;
+import com.proyecto.servicios.exception.ReglaNegocioException;
+import com.proyecto.servicios.repository.banco.DatosBiometricosRepository;
 import com.proyecto.servicios.service.banco.BiometriaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

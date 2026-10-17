@@ -1,5 +1,6 @@
 package com.proyecto.servicios.entity.banco;
 
+import com.proyecto.servicios.enums.EstatusCuenta;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -16,10 +17,6 @@ import java.time.OffsetDateTime;
 @AllArgsConstructor
 @Builder
 public class Cuenta {
-
-    public enum EstatusCuenta {
-        ACTIVA, BLOQUEADA, INACTIVA
-    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

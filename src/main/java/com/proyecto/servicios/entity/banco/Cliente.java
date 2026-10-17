@@ -2,6 +2,7 @@ package com.proyecto.servicios.entity.banco;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -85,18 +86,17 @@ public class Cliente {
     private OffsetDateTime fechaActualizacion;
 
     // Relaciones
+    // Usuario y DatosBiometricos se consultan desde sus propios repositorios (lado dueño de la relación).
+    // Mapearlos aquí como OneToOne inverso obligaba a Hibernate a ejecutar una consulta extra por
+    // cada cliente (N+1) y a cargar la fotografía biométrica en cada listado.
     @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private Domicilio domicilio;
 
+    /** Las cuentas de todos los clientes de una página se cargan en una sola consulta (evita N+1). */
     @OneToMany(mappedBy = "cliente", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @BatchSize(size = 100)
     @Builder.Default
     private List<Cuenta> cuentas = new ArrayList<>();
-
-    @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private Usuario usuario;
-
-    @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private DatosBiometricos datosBiometricos;
 
     public void agregarCuenta(Cuenta cuenta) {
         cuentas.add(cuenta);
