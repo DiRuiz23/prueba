@@ -22,6 +22,12 @@ public class CustomUserDetailsService implements UserDetailsService {
         Usuario usuario = usuarioRepository.findByCorreo(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado con correo: " + username));
                 
-        return new User(usuario.getCorreo(), usuario.getPassword(), Collections.emptyList());
+        // Un usuario dado de baja (activo = false) queda deshabilitado: su JWT aún vigente deja de ser válido.
+        return User.builder()
+                .username(usuario.getCorreo())
+                .password(usuario.getPassword())
+                .authorities(Collections.emptyList())
+                .disabled(!Boolean.TRUE.equals(usuario.getActivo()))
+                .build();
     }
 }

@@ -38,6 +38,24 @@ public class Cuenta {
     @Builder.Default
     private EstatusCuenta estatus = EstatusCuenta.ACTIVA;
 
+    @Column(name = "pin_hash", length = 255)
+    private String pinHash;
+
+    @Column(name = "intentos_fallidos_pin", nullable = false)
+    @Builder.Default
+    private Integer intentosFallidosPin = 0;
+
+    @Column(name = "bloqueo_pin_hasta")
+    private OffsetDateTime bloqueoPinHasta;
+
+    public String getPin() {
+        return pinHash;
+    }
+
+    public void setPin(String pin) {
+        this.pinHash = pin;
+    }
+
     @CreationTimestamp
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private OffsetDateTime fechaCreacion;

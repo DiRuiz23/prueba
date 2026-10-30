@@ -8,4 +8,8 @@ public abstract class NegocioException extends RuntimeException {
     protected NegocioException(String mensaje) {
         super(mensaje);
     }
+
+    protected NegocioException(String mensaje, Throwable causa) {
+        super(mensaje, causa);
+    }
 }

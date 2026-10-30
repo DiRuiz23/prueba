@@ -22,7 +22,7 @@ public class ClienteController {
     private final ClienteService clienteService;
 
     @PostMapping
-    @Operation(summary = "Registrar un nuevo cliente con cuenta bancaria, usuario de acceso y biometría")
+    @Operation(summary = "Registrar un nuevo cliente con cuenta bancaria, usuario de acceso y biometría opcional")
     public ResponseEntity<GenericResponse<ClienteResponse>> registrar(
             @Valid @RequestBody RegistroClienteRequest request) {
         ClienteResponse respuesta = clienteService.registrarCliente(request);

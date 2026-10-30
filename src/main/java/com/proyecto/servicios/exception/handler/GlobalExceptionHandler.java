@@ -5,11 +5,17 @@ import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.proyecto.servicios.dto.response.GenericResponse;
+import com.proyecto.servicios.dto.response.banco.PagoServicioResponse;
+import com.proyecto.servicios.entity.banco.TransaccionServicio;
 import com.proyecto.servicios.exception.AccesoDenegadoException;
 import com.proyecto.servicios.exception.NoAutenticadoException;
 import com.proyecto.servicios.exception.RecursoDuplicadoException;
 import com.proyecto.servicios.exception.RecursoNoEncontradoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
+import com.proyecto.servicios.exception.banco.PinBloqueadoException;
+import com.proyecto.servicios.exception.gestopago.ProveedorException;
+import com.proyecto.servicios.exception.gestopago.ProveedorNoDisponibleException;
+import com.proyecto.servicios.exception.gestopago.ResultadoInciertoException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,6 +28,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -39,6 +46,32 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 202 ACCEPTED — Resultado incierto / En proceso de conciliación
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @ExceptionHandler(ResultadoInciertoException.class)
+    public ResponseEntity<GenericResponse<PagoServicioResponse>> manejarResultadoIncierto(ResultadoInciertoException ex) {
+        log.warn("Resultado incierto con proveedor externo: {}", ex.getMessage());
+        PagoServicioResponse datos = null;
+        if (ex.getTransaccion() != null) {
+            TransaccionServicio tx = ex.getTransaccion();
+            datos = PagoServicioResponse.builder()
+                    .idTransaccion(tx.getId())
+                    .upc(tx.getUpc())
+                    .numeroCuenta(tx.getCuenta() != null ? tx.getCuenta().getNumeroCuenta() : null)
+                    .montoDebitado(tx.getMontoDebitado())
+                    .saldoRestante(tx.getSaldoPosterior())
+                    .telefonoReferencia(tx.getTelefonoReferencia())
+                    .estatus("EN_PROCESO")
+                    .mensaje(ex.getMessage())
+                    .fechaTransaccion(tx.getFechaTransaccion())
+                    .build();
+        }
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GenericResponse.exito(ex.getMessage(), datos));
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // 400 BAD REQUEST — Validación y formato de la petición
@@ -59,6 +92,12 @@ public class GlobalExceptionHandler {
                 .forEach(error -> errores.putIfAbsent(error.getObjectName(), error.getDefaultMessage()));
         return responder(HttpStatus.BAD_REQUEST,
                 GenericResponse.errorValidacion("Datos no válidos", errores));
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<GenericResponse<Void>> manejarCabeceraFaltante(MissingRequestHeaderException ex) {
+        return responder(HttpStatus.BAD_REQUEST, GenericResponse.error(
+                "La cabecera HTTP obligatoria '" + ex.getHeaderName() + "' no fue proporcionada"));
     }
 
     /** Violaciones de restricciones validadas fuera del cuerpo (por ejemplo, en servicios con {@code @Validated}). */
@@ -100,7 +139,7 @@ public class GlobalExceptionHandler {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 401 / 403 — Autenticación y autorización
+    // 401 / 403 / 423 — Autenticación y autorización
     // ─────────────────────────────────────────────────────────────────────────
 
     /** Credenciales incorrectas u otros fallos de identificación propios del negocio. */
@@ -127,6 +166,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<GenericResponse<Void>> manejarAccesoDenegadoSpring(AccessDeniedException ex) {
         return responder(HttpStatus.FORBIDDEN,
                 GenericResponse.error("No cuenta con permisos para realizar esta operación"));
+    }
+
+    /** PIN transaccional bloqueado por superar número máximo de intentos fallidos. */
+    @ExceptionHandler(PinBloqueadoException.class)
+    public ResponseEntity<GenericResponse<Void>> manejarPinBloqueado(PinBloqueadoException ex) {
+        return responder(HttpStatus.LOCKED, GenericResponse.error(ex.getMessage()));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -166,7 +211,7 @@ public class GlobalExceptionHandler {
     // 409 CONFLICT
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** CURP, RFC, correo o usuario ya registrados. */
+    /** CURP, RFC, correo o clave de idempotencia duplicada. */
     @ExceptionHandler(RecursoDuplicadoException.class)
     public ResponseEntity<GenericResponse<Void>> manejarRecursoDuplicado(RecursoDuplicadoException ex) {
         return responder(HttpStatus.CONFLICT, GenericResponse.error(ex.getMessage()));
@@ -191,6 +236,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<GenericResponse<Void>> manejarReglaNegocio(ReglaNegocioException ex) {
         return responder(HttpStatus.UNPROCESSABLE_ENTITY, GenericResponse.error(ex.getMessage()));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 502 BAD GATEWAY / 503 SERVICE UNAVAILABLE — Integración externa GestoPago
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @ExceptionHandler(ProveedorException.class)
+    public ResponseEntity<GenericResponse<Void>> manejarProveedorRechazo(ProveedorException ex) {
+        log.warn("Rechazo definitivo del proveedor GestoPago: {}", ex.getMessage());
+        return responder(HttpStatus.BAD_GATEWAY, GenericResponse.error(
+                "No fue posible completar la operación con el proveedor externo: " + ex.getMessage()));
+    }
+
+    @ExceptionHandler(ProveedorNoDisponibleException.class)
+    public ResponseEntity<GenericResponse<Void>> manejarProveedorNoDisponible(ProveedorNoDisponibleException ex) {
+        log.error("Pasarela de pagos o catálogo no disponible: {}", ex.getMessage());
+        return responder(HttpStatus.SERVICE_UNAVAILABLE, GenericResponse.error(
+                "El servicio de pagos no se encuentra disponible temporalmente. Intente nuevamente en unos minutos."));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

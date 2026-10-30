@@ -22,7 +22,7 @@ public class BiometriaServiceImpl implements BiometriaService {
 
     public DatosBiometricos procesarYGuardarBiometria(Cliente cliente, String facialBase64) {
         if (facialBase64 == null || facialBase64.trim().isEmpty()) {
-            throw new ReglaNegocioException("La fotografía facial biométrica es mandatoria.");
+            return null;
         }
 
         // Limpiar encabezados Data-URI si vienen incluidos

@@ -118,8 +118,10 @@ public class ClienteServiceImpl implements ClienteService {
                 .build();
         usuarioRepository.save(usuario);
 
-        // 6. Almacenar Biometría
-        biometriaService.procesarYGuardarBiometria(cliente, request.getDatosBiometricosFacialBase64());
+        // 6. Almacenar Biometría (opcional)
+        if (request.getDatosBiometricosFacialBase64() != null && !request.getDatosBiometricosFacialBase64().trim().isEmpty()) {
+            biometriaService.procesarYGuardarBiometria(cliente, request.getDatosBiometricosFacialBase64());
+        }
 
         log.info("Onboarding completado exitosamente para el cliente ID: {}", cliente.getId());
 

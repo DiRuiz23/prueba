@@ -92,7 +92,6 @@ public class RegistroClienteRequest {
     @Pattern(regexp = PatronesValidacion.PASSWORD, message = "La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial")
     private String password;
 
-    // --- BIOMETRÍA FACIAL ---
-    @NotBlank(message = "La captura facial biométrica es obligatoria")
+    // --- BIOMETRÍA FACIAL (OPCIONAL) ---
     private String datosBiometricosFacialBase64;
 }
