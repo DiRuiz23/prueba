@@ -1,6 +1,6 @@
 package com.proyecto.servicios.entity.gestopago;
 
-import com.proyecto.servicios.model.gestopago.CatProductXml;
+import com.proyecto.servicios.client.model.CatProductXml;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;

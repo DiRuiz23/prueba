@@ -14,6 +14,6 @@ import org.springframework.data.mongodb.repository.config.EnableMongoRepositorie
  */
 @Slf4j
 @Configuration
-@EnableMongoRepositories(basePackages = "com.proyecto.servicios.repositorys.gestopago")
+@EnableMongoRepositories(basePackages = "com.proyecto.servicios.repository.gestopago")
 public class MongoConfig {
 }

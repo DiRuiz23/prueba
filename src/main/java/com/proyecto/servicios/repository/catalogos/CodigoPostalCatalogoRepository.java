@@ -1,0 +1,15 @@
+package com.proyecto.servicios.repository.catalogos;
+
+import com.proyecto.servicios.entity.catalogos.CodigoPostalCatalogo;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface CodigoPostalCatalogoRepository extends JpaRepository<CodigoPostalCatalogo, Integer> {
+    List<CodigoPostalCatalogo> findByEstadoId(Integer estadoId);
+    List<CodigoPostalCatalogo> findByCodigo(String codigo);
+
+    boolean existsByEstadoIdAndCodigoAndMunicipioIgnoreCase(Integer estadoId, String codigo, String municipio);
+}

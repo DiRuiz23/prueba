@@ -22,9 +22,8 @@ import java.time.format.DateTimeFormatter;
 
 public class App implements CommandLineRunner {
 
-    @Autowired
-    private ApplicationContext context;
-
+    @Autowired(required = false)
+    private BuildProperties buildProperties;
 
     public static void main(String[] args) {
         SpringApplication.run(App.class, args);
@@ -32,18 +31,12 @@ public class App implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        //	displayInfo(context.getBean(BuildProperties.class));
-    }
-
-    private static void displayInfo(BuildProperties buildProperties) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-        String out = formatter.format(buildProperties.getTime());
-        log.info("Nombre artefacto: " + buildProperties.getName() + "\n"
-                + "Versión: " + buildProperties.getVersion() + "\n"
-                + "Fecha Compilación: " + out + "\n"
-                + "Artefacto: " + buildProperties.getArtifact() + "\n"
-                + "Grupo: " + buildProperties.getGroup());
-
-
+        if (buildProperties != null) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
+            log.info("Iniciando {} v{} (Compilado: {})",
+                    buildProperties.getName(),
+                    buildProperties.getVersion(),
+                    formatter.format(buildProperties.getTime()));
+        }
     }
 }
