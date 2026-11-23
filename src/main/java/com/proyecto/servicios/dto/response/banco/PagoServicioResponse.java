@@ -40,6 +40,12 @@ public class PagoServicioResponse {
     @Schema(description = "Teléfono o referencia del servicio pagado", example = "5555555551")
     private String telefonoReferencia;
 
+    @Schema(description = "Identificador del producto adquirido", example = "101")
+    private Integer idProducto;
+
+    @Schema(description = "Identificador del servicio", example = "50")
+    private Integer idServicio;
+
     @Schema(description = "Estatus de la transacción (EXITOSA, EN_PROCESO, FALLIDA, REVERSADA)", example = "EXITOSA")
     private String estatus;
 

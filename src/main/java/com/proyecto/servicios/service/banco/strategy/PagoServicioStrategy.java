@@ -49,7 +49,7 @@ public class PagoServicioStrategy implements ReglaMontoStrategy {
                     comision = valor;
                 }
             } catch (NumberFormatException ignored) {
-                comision = BigDecimal.ZERO;
+                // Se mantiene comision en ZERO
             }
         }
 

@@ -1,10 +1,12 @@
 package com.proyecto.servicios.config.security;
 
+import com.proyecto.servicios.service.banco.SesionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,8 +23,10 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    // Asumimos que tienes un UserDetailsService configurado, si no, lo puedes inyectar o implementar
     private final UserDetailsService userDetailsService;
+
+    @Autowired(required = false)
+    private SesionService sesionService;
 
     @Override
     protected void doFilterInternal(
@@ -41,7 +45,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         userEmail = jwtService.extraerUsername(jwt);
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
-            if (userDetails.isEnabled() && jwtService.esTokenValido(jwt, userDetails)) {
+            String jti = jwtService.extraerJti(jwt);
+            boolean sesionValida = (sesionService == null || jti == null || sesionService.esSesionActiva(jti));
+
+            if (userDetails.isEnabled() && jwtService.esTokenValido(jwt, userDetails) && sesionValida) {
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,

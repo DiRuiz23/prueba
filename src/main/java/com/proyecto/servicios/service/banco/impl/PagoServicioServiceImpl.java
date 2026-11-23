@@ -31,8 +31,10 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -41,6 +43,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class PagoServicioServiceImpl implements PagoServicioService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final AutorizacionOperacionService autorizacionOperacionService;
     private final CatalogoPagoValidator catalogoPagoValidator;
@@ -103,9 +107,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         );
 
         // 4. Generar identificadores únicos y datos canónicos
-        String horaLocal = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now());
+        String horaLocal = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now(ZoneId.systemDefault()));
         // UPC: máximo 15 caracteres (ejemplo: GP + 12 dígitos)
-        String upc = "GP" + (System.currentTimeMillis() % 100000000000L) + String.format("%02d", (int)(Math.random() * 100));
+        String upc = "GP" + (System.currentTimeMillis() % 100000000000L) + String.format("%02d", SECURE_RANDOM.nextInt(100));
         if (upc.length() > 15) {
             upc = upc.substring(0, 15);
         }
@@ -173,7 +177,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                     .telefonoReferencia(request.getTelefonoReferencia())
                     .estatus("EXITOSA")
                     .mensaje(txXml.getTexto() != null ? txXml.getTexto() : "Operación realizada con éxito")
-                    .fechaTransaccion(OffsetDateTime.now())
+                    .fechaTransaccion(OffsetDateTime.now(ZoneId.systemDefault()))
                     .build();
         } else {
             String motivo = txXml != null && txXml.getTexto() != null
@@ -196,10 +200,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
         // Validar titularidad
         Usuario usuario = usuarioRepository.findByCorreo(correoAutenticado).orElse(null);
-        if (usuario != null && tx.getCuenta() != null && tx.getCuenta().getCliente() != null) {
-            if (!tx.getCuenta().getCliente().getId().equals(usuario.getCliente().getId())) {
-                throw new RecursoNoEncontradoException("No se encontró la transacción solicitada.");
-            }
+        if (usuario != null && tx.getCuenta() != null && tx.getCuenta().getCliente() != null
+                && !tx.getCuenta().getCliente().getId().equals(usuario.getCliente().getId())) {
+            throw new RecursoNoEncontradoException("No se encontró la transacción solicitada.");
         }
         return construirRespuestaDesdeEntidad(tx);
     }

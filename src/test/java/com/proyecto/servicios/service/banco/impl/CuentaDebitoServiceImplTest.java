@@ -5,7 +5,6 @@ import com.proyecto.servicios.dto.request.banco.PagoServicioRequest;
 import com.proyecto.servicios.entity.banco.Cuenta;
 import com.proyecto.servicios.entity.banco.MovimientoCuenta;
 import com.proyecto.servicios.entity.banco.TransaccionServicio;
-import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.enums.EstatusTransaccionServicio;
 import com.proyecto.servicios.enums.TipoMovimientoCuenta;
 import com.proyecto.servicios.exception.banco.SaldoInsuficienteException;
@@ -85,9 +84,10 @@ class CuentaDebitoServiceImplTest {
                 new BigDecimal("100.00"), BigDecimal.ZERO, new BigDecimal("100.00")
         );
 
+        PagoServicioRequest request = new PagoServicioRequest();
         assertThrows(SaldoInsuficienteException.class,
                 () -> cuentaDebitoService.reservarFondosYRegistrar(
-                        c, null, new PagoServicioRequest(), montos, "key-123", "hash-req", "GP0000000001", "hora", "payload"
+                        c, null, request, montos, "key-123", "hash-req", "GP0000000001", "hora", "payload"
                 ));
 
         verifyNoInteractions(transaccionRepository);

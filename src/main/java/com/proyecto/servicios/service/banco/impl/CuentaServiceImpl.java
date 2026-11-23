@@ -31,6 +31,9 @@ import java.security.SecureRandom;
 @Slf4j
 public class CuentaServiceImpl implements CuentaService {
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String CUENTA_NO_ENCONTRADA_MSG = "No se encontró la cuenta con número: ";
+
     private final CuentaRepository cuentaRepository;
     private final ClienteRepository clienteRepository;
 
@@ -44,7 +47,7 @@ public class CuentaServiceImpl implements CuentaService {
         String num = request.getNumeroCuenta().trim();
         return cuentaRepository.findByNumeroCuenta(num)
                 .map(CuentaResponse::desdeEntidad)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
     }
 
     @Override
@@ -76,7 +79,7 @@ public class CuentaServiceImpl implements CuentaService {
                 .orElseThrow(() -> new ClienteNoEncontradoException(
                         "No se encontró el cliente con ID: " + request.getClienteId()));
 
-        if (!cliente.getActivo()) {
+        if (!Boolean.TRUE.equals(cliente.getActivo())) {
             throw new ReglaNegocioException("No se pueden abrir cuentas para un cliente dado de baja.");
         }
 
@@ -109,10 +112,10 @@ public class CuentaServiceImpl implements CuentaService {
     public CuentaResponse cambiarEstatusCuenta(ActualizarEstatusCuentaRequest request) {
         String num = request.getNumeroCuenta().trim();
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(num)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
 
         // Regla: no se puede activar la cuenta de un cliente dado de baja
-        if (request.getNuevoEstatus() == EstatusCuenta.ACTIVA && !cuenta.getCliente().getActivo()) {
+        if (request.getNuevoEstatus() == EstatusCuenta.ACTIVA && !Boolean.TRUE.equals(cuenta.getCliente().getActivo())) {
             throw new ReglaNegocioException("No se puede activar una cuenta perteneciente a un cliente inactivo.");
         }
 
@@ -131,7 +134,7 @@ public class CuentaServiceImpl implements CuentaService {
     public SaldoResponse consultarSaldo(NumeroCuentaRequest request) {
         String num = request.getNumeroCuenta().trim();
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(num)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
         return new SaldoResponse(cuenta.getNumeroCuenta(), cuenta.getSaldo());
     }
 
@@ -140,10 +143,9 @@ public class CuentaServiceImpl implements CuentaService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private String generarNumeroCuenta() {
-        SecureRandom random = new SecureRandom();
         String numero;
         do {
-            long sufijo = 1_000_000_000L + (long) (random.nextDouble() * 9_000_000_000L);
+            long sufijo = 1_000_000_000L + (long) (SECURE_RANDOM.nextDouble() * 9_000_000_000L);
             numero = "012" + sufijo;
         } while (cuentaRepository.existsByNumeroCuenta(numero));
         return numero;

@@ -17,4 +17,8 @@ public class LoginRequest {
 
     @NotBlank(message = "La contraseña es obligatoria")
     private String password;
+
+    private String dispositivo = "DESCONOCIDO";
+
+    private Boolean forzarCierreSesionAnterior = false;
 }

@@ -4,6 +4,7 @@ import com.proyecto.servicios.dto.request.banco.PagoServicioRequest;
 import com.proyecto.servicios.dto.response.GenericResponse;
 import com.proyecto.servicios.dto.response.banco.PagoServicioResponse;
 import com.proyecto.servicios.exception.NoAutenticadoException;
+import com.proyecto.servicios.service.banco.HistorialTransaccionService;
 import com.proyecto.servicios.service.banco.PagoServicioService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -12,6 +13,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 public class TransaccionController {
 
     private final PagoServicioService pagoServicioService;
+    private final HistorialTransaccionService historialTransaccionService;
 
     @PostMapping("/pago-servicio")
     @Operation(
@@ -75,5 +81,27 @@ public class TransaccionController {
         }
         PagoServicioResponse respuesta = pagoServicioService.consultarEstadoTransaccion(id, authentication.getName());
         return ResponseEntity.ok(GenericResponse.exito("Consulta de transacción exitosa", respuesta));
+    }
+
+    @GetMapping("/historial")
+    @Operation(
+            summary = "Consultar historial de compras y pagos exitosos",
+            description = "Retorna el historial paginado de compras exitosas asociadas al usuario autenticado, ordenadas cronológicamente."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Historial obtenido exitosamente"),
+            @ApiResponse(responseCode = "401", description = "Sesión no autenticada")
+    })
+    public ResponseEntity<GenericResponse<Page<PagoServicioResponse>>> consultarHistorial(
+            @PageableDefault(size = 10, sort = "fechaTransaccion", direction = Sort.Direction.DESC) Pageable pageable,
+            Authentication authentication
+    ) {
+        if (authentication == null || authentication.getName() == null) {
+            throw new NoAutenticadoException("Se requiere una sesión autenticada válida para operar.");
+        }
+        Page<PagoServicioResponse> historial = historialTransaccionService.obtenerHistorialExitoso(
+                authentication.getName(), pageable
+        );
+        return ResponseEntity.ok(GenericResponse.exito("Historial obtenido exitosamente", historial));
     }
 }

@@ -2,6 +2,8 @@ package com.proyecto.servicios.repository.banco;
 
 import com.proyecto.servicios.entity.banco.TransaccionServicio;
 import com.proyecto.servicios.enums.EstatusTransaccionServicio;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,6 +21,18 @@ public interface TransaccionServicioRepository extends JpaRepository<Transaccion
     boolean existsByUpc(String upc);
 
     List<TransaccionServicio> findByCuentaId(Long cuentaId);
+
+    Page<TransaccionServicio> findByCuentaClienteIdAndEstatus(
+            Long clienteId,
+            EstatusTransaccionServicio estatus,
+            Pageable pageable
+    );
+
+    Page<TransaccionServicio> findByUsuarioIdAndEstatus(
+            Long usuarioId,
+            EstatusTransaccionServicio estatus,
+            Pageable pageable
+    );
 
     Optional<TransaccionServicio> findByCuentaIdAndIdempotencyKey(Long cuentaId, String idempotencyKey);
 

@@ -15,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -32,7 +33,7 @@ public class ConciliacionServiceImpl implements ConciliacionService {
     @Override
     @Scheduled(fixedDelayString = "${gestopago.conciliacion.intervalo-ms:30000}", initialDelay = 15000)
     public int procesarTransaccionesEnConciliacion() {
-        OffsetDateTime ahora = OffsetDateTime.now();
+        OffsetDateTime ahora = OffsetDateTime.now(ZoneId.systemDefault());
         List<TransaccionServicio> candidatas = cuentaDebitoService
                 .reclamarCandidatasConciliacion(ahora, 20);
 

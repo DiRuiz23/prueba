@@ -29,12 +29,16 @@ import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.Period;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ClienteServiceImpl implements ClienteService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String CLIENTE_NO_ENCONTRADO_MSG = "No se encontró el cliente con ID: ";
 
     private final ClienteRepository clienteRepository;
     private final CuentaRepository cuentaRepository;
@@ -137,7 +141,7 @@ public class ClienteServiceImpl implements ClienteService {
     public ClienteResponse consultarPorId(ClienteIdRequest request) {
         Long id = request.getId();
         Cliente cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No se encontró el cliente con ID: " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(CLIENTE_NO_ENCONTRADO_MSG + id));
         return ClienteResponse.desdeEntidad(cliente);
     }
 
@@ -182,7 +186,7 @@ public class ClienteServiceImpl implements ClienteService {
     public ClienteResponse actualizarCliente(ActualizarClienteRequest patch) {
         Long id = patch.getId();
         Cliente cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No se encontró el cliente con ID: " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(CLIENTE_NO_ENCONTRADO_MSG + id));
 
         // Aplicación selectiva de campos permitidos (CURP y RFC son inmutables)
         if (patch.getEstadoCivil() != null) {
@@ -252,7 +256,7 @@ public class ClienteServiceImpl implements ClienteService {
     public void bajaLogicaCliente(ClienteIdRequest request) {
         Long id = request.getId();
         Cliente cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No se encontró el cliente con ID: " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(CLIENTE_NO_ENCONTRADO_MSG + id));
 
         cliente.setActivo(false);
         clienteRepository.save(cliente);
@@ -276,7 +280,7 @@ public class ClienteServiceImpl implements ClienteService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void validarMayoriaEdad(LocalDate fechaNacimiento) {
-        if (fechaNacimiento == null || Period.between(fechaNacimiento, LocalDate.now()).getYears() < 18) {
+        if (fechaNacimiento == null || Period.between(fechaNacimiento, LocalDate.now(ZoneId.systemDefault())).getYears() < 18) {
             throw new ReglaNegocioException("El cliente debe ser mayor de edad (18 años cumplidos).");
         }
     }
@@ -294,10 +298,9 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     private String generarNumeroCuentaUnico() {
-        SecureRandom random = new SecureRandom();
         String numero;
         do {
-            long sufijo = 1_000_000_000L + (long) (random.nextDouble() * 9_000_000_000L);
+            long sufijo = 1_000_000_000L + (long) (SECURE_RANDOM.nextDouble() * 9_000_000_000L);
             numero = "012" + sufijo;
         } while (cuentaRepository.existsByNumeroCuenta(numero));
         return numero;

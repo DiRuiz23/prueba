@@ -18,7 +18,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -46,6 +45,9 @@ class TransaccionControllerTest {
 
     @MockBean
     private PagoServicioService pagoServicioService;
+
+    @MockBean
+    private com.proyecto.servicios.service.banco.HistorialTransaccionService historialTransaccionService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -193,5 +195,17 @@ class TransaccionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.datos.idTransaccion").value(1))
                 .andExpect(jsonPath("$.datos.estatus").value("EXITOSA"));
+    }
+
+    @Test
+    @DisplayName("GET /transacciones/historial → HTTP 200 con listado paginado")
+    void consultarHistorial_retorna200() throws Exception {
+        when(historialTransaccionService.obtenerHistorialExitoso(eq("cliente@banco.com"), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        mockMvc.perform(get("/transacciones/historial")
+                        .principal(principal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(0));
     }
 }

@@ -37,8 +37,9 @@ class ReglaMontoStrategyTest {
         item.setTipoFront(1);
         item.setPrecio("50.00");
 
+        BigDecimal monto = new BigDecimal("100.00");
         MontoInvalidoException ex = assertThrows(MontoInvalidoException.class,
-                () -> recargaStrategy.validarYCalcular(new BigDecimal("100.00"), item));
+                () -> recargaStrategy.validarYCalcular(monto, item));
         assertTrue(ex.getMessage().contains("no coincide con el valor exacto de la recarga en catálogo"));
     }
 
@@ -80,10 +81,11 @@ class ReglaMontoStrategyTest {
         item.setTipoFront(2);
         item.setPrecio("12.00");
 
+        BigDecimal montoNegativo = new BigDecimal("-10.00");
         assertThrows(MontoInvalidoException.class,
                 () -> pagoServicioStrategy.validarYCalcular(BigDecimal.ZERO, item));
         assertThrows(MontoInvalidoException.class,
-                () -> pagoServicioStrategy.validarYCalcular(new BigDecimal("-10.00"), item));
+                () -> pagoServicioStrategy.validarYCalcular(montoNegativo, item));
     }
 
     @Test
@@ -93,8 +95,9 @@ class ReglaMontoStrategyTest {
         item.setTipoFront(2);
         item.setPrecio("12.00");
 
+        BigDecimal montoSobreLimite = new BigDecimal("5000.01");
         MontoInvalidoException ex = assertThrows(MontoInvalidoException.class,
-                () -> pagoServicioStrategy.validarYCalcular(new BigDecimal("5000.01"), item));
+                () -> pagoServicioStrategy.validarYCalcular(montoSobreLimite, item));
         assertTrue(ex.getMessage().contains("supera el límite máximo permitido"));
     }
 }

@@ -23,11 +23,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class CuentaDebitoServiceImpl implements CuentaDebitoService {
+
+    private static final String TX_NO_ENCONTRADA_MSG = "Transacción no encontrada: ";
 
     private final CuentaRepository cuentaRepository;
     private final TransaccionServicioRepository transaccionRepository;
@@ -107,7 +110,7 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void confirmarExito(TransaccionServicio tx, GestoPagoTxResponseXml txXml) {
         TransaccionServicio txActual = transaccionRepository.findById(tx.getId())
-                .orElseThrow(() -> new IllegalStateException("Transacción no encontrada: " + tx.getId()));
+                .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         txActual.setEstatus(EstatusTransaccionServicio.EXITOSA);
         if (txXml != null) {
@@ -125,7 +128,7 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void registrarFalloYReembolsar(TransaccionServicio tx, GestoPagoTxResponseXml txXml, String motivo) {
         TransaccionServicio txActual = transaccionRepository.findById(tx.getId())
-                .orElseThrow(() -> new IllegalStateException("Transacción no encontrada: " + tx.getId()));
+                .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         if (txActual.getEstatus() == EstatusTransaccionServicio.PENDIENTE) {
             // Reembolsar saldo atómicamente
@@ -167,13 +170,14 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void registrarEnConciliacion(TransaccionServicio tx, String codigoRespuesta, String motivo) {
         TransaccionServicio txActual = transaccionRepository.findById(tx.getId())
-                .orElseThrow(() -> new IllegalStateException("Transacción no encontrada: " + tx.getId()));
+                .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         if (txActual.getEstatus() == EstatusTransaccionServicio.PENDIENTE) {
             txActual.setEstatus(EstatusTransaccionServicio.EN_CONCILIACION);
             // El proveedor exige esperar al menos 62 segundos antes de la primera consulta confirmTx
-            txActual.setProximaConfirmacionAt(OffsetDateTime.now().plusSeconds(62));
-            txActual.setFechaLimiteConciliacion(OffsetDateTime.now().plusHours(24));
+            OffsetDateTime ahora = OffsetDateTime.now(ZoneId.systemDefault());
+            txActual.setProximaConfirmacionAt(ahora.plusSeconds(62));
+            txActual.setFechaLimiteConciliacion(ahora.plusHours(24));
             txActual.setCodigoRespuesta(codigoRespuesta);
             txActual.setMensajeRespuesta(motivo);
             transaccionRepository.save(txActual);
@@ -186,7 +190,7 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void ejecutarReembolsoConciliacion(TransaccionServicio tx, String motivo) {
         TransaccionServicio txActual = transaccionRepository.findById(tx.getId())
-                .orElseThrow(() -> new IllegalStateException("Transacción no encontrada: " + tx.getId()));
+                .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         if (txActual.getEstatus() == EstatusTransaccionServicio.EN_CONCILIACION) {
             cuentaRepository.reembolsarSaldoAtomico(txActual.getCuenta().getId(), txActual.getMontoDebitado());

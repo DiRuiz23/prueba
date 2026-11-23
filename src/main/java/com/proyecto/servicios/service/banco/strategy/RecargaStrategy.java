@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 @Component
 public class RecargaStrategy implements ReglaMontoStrategy {
 
-    private static final Pattern TELEFONO_PATTERN = Pattern.compile("^[0-9]{10}$");
+    private static final Pattern TELEFONO_PATTERN = Pattern.compile("^\\d{10}$");
 
     @Override
     public boolean soporta(Integer tipoFront) {

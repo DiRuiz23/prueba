@@ -34,8 +34,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Endpoints Públicos: Registro, Login y Documentación Swagger
-                        .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                        // Endpoints Públicos: Autenticación, Registro y Documentación Swagger
+                        .requestMatchers("/auth/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/clientes").permitAll()
                         .requestMatchers(HttpMethod.POST, "/usuarios").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/usuarios/agregar").permitAll()
