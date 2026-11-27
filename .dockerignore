@@ -1,6 +1,12 @@
 .git
 .gradle
+.env
+.env.*
 build
 bin
 .idea
 *.log
+web-app
+flutter_app
+GUIA_PRUEBAS_PAYLOADS.md
+README.md

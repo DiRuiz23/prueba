@@ -5,7 +5,7 @@ WORKDIR /app
 COPY gradlew .
 COPY gradle ./gradle
 COPY build.gradle settings.gradle ./
-RUN chmod +x ./gradlew
+RUN sed -i 's/\r$//' ./gradlew && chmod +x ./gradlew
 
 # Copiar código fuente y empaquetar el JAR
 COPY src ./src
@@ -17,8 +17,8 @@ WORKDIR /app
 
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-# Optimización de memoria para el plan gratuito de Render (512MB RAM)
-ENV JAVA_OPTS="-Xmx384m -Xms128m -XX:+UseContainerSupport"
+# Optimización de memoria y modo headless (QR) para el plan gratuito de Render (512MB RAM)
+ENV JAVA_OPTS="-Xmx384m -Xms128m -XX:+UseContainerSupport -Djava.awt.headless=true"
 EXPOSE 8000
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8000} -jar app.jar"]
