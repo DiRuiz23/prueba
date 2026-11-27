@@ -6,15 +6,51 @@ import 'historial_state.dart';
 
 class HistorialCubit extends Cubit<HistorialState> {
   final HistorialRepository repository;
+  final List<TransaccionEntity> _ticketsLocales = [];
 
   HistorialCubit({required this.repository}) : super(const HistorialInitial());
+
+  void registrarTicketLocal(TransaccionEntity ticket) {
+    _ticketsLocales.removeWhere(
+      (t) => t.upc == ticket.upc && t.fechaTransaccion == ticket.fechaTransaccion,
+    );
+    _ticketsLocales.insert(0, ticket);
+    if (_ticketsLocales.length > 30) {
+      _ticketsLocales.removeLast();
+    }
+    final current = state;
+    if (current is HistorialLoaded) {
+      final actualizados = [
+        ticket,
+        ...current.items.where(
+          (t) => !(t.upc == ticket.upc && t.fechaTransaccion == ticket.fechaTransaccion),
+        ),
+      ];
+      emit(HistorialLoaded(
+        items: actualizados,
+        paginaActual: current.paginaActual,
+        esUltima: current.esUltima,
+        cargandoMas: current.cargandoMas,
+      ));
+    }
+  }
+
+  void limpiarTicketsLocales() {
+    _ticketsLocales.clear();
+  }
 
   Future<void> cargarInicial() async {
     emit(const HistorialLoading());
     try {
       final page = await repository.obtenerHistorialExitoso(pagina: 0, tamanio: 10);
+      final combinados = [
+        ..._ticketsLocales.where(
+          (loc) => !page.items.any((r) => r.upc == loc.upc && r.idTransaccion > 0),
+        ),
+        ...page.items,
+      ];
       emit(HistorialLoaded(
-        items: page.items,
+        items: combinados,
         paginaActual: page.paginaActual,
         esUltima: page.esUltima,
       ));

@@ -6,6 +6,7 @@ import '../../features/auth/presentation/cubit/auth_cubit.dart';
 import '../../features/auth/presentation/cubit/auth_state.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/otp_verification_page.dart';
+import '../../features/auth/presentation/pages/registro_page.dart';
 import '../../features/catalogo/domain/entities/producto_entity.dart';
 import '../../features/catalogo/presentation/pages/catalogo_page.dart';
 import '../../features/catalogo/presentation/pages/producto_detalle_page.dart';
@@ -36,7 +37,8 @@ GoRouter createAppRouter(AuthCubit authCubit) {
       final authState = authCubit.state;
       final isAuthenticated = authState is AuthAuthenticated;
       final location = state.matchedLocation;
-      final isPublicRoute = location == '/login' || location == '/otp';
+      final isPublicRoute =
+          location == '/login' || location == '/otp' || location == '/registro';
 
       if (!isAuthenticated && !isPublicRoute) {
         return '/login';
@@ -52,14 +54,22 @@ GoRouter createAppRouter(AuthCubit authCubit) {
         builder: (context, state) => const LoginPage(),
       ),
       GoRoute(
+        path: '/registro',
+        builder: (context, state) => const RegistroPage(),
+      ),
+      GoRoute(
         path: '/otp',
         builder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return OtpVerificationPage(
             correo: (extra['correo'] as String?) ?? '',
-            segundosIniciales: (extra['segundos'] as int?) ?? 300,
             mensajeInicial: (extra['mensaje'] as String?) ??
-                'Ingresa el código de 6 dígitos enviado a tu correo.',
+                'Ingresa el código de 6 dígitos de tu app Google Authenticator.',
+            requiereConfiguracionTotp:
+                (extra['requiereConfiguracionTotp'] as bool?) ?? false,
+            totpSecreto: extra['totpSecreto'] as String?,
+            totpOtpAuthUri: extra['totpOtpAuthUri'] as String?,
+            totpQrBase64: extra['totpQrBase64'] as String?,
           );
         },
       ),

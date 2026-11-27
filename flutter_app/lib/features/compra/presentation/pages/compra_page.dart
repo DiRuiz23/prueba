@@ -3,10 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/input_formatters.dart';
 import '../../../../core/widgets/product_avatar.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
 import '../../../catalogo/domain/entities/producto_entity.dart';
+import '../../../historial/presentation/cubit/historial_cubit.dart';
 import '../../domain/entities/cuenta_entity.dart';
 import '../cubit/compra_cubit.dart';
 import '../cubit/compra_state.dart';
@@ -43,7 +45,9 @@ class _CompraPageState extends State<CompraPage> {
     cubit.prepararNuevaOperacion();
 
     final authState = context.read<AuthCubit>().state;
-    if (authState is AuthAuthenticated && cubit.state.cuentas.isEmpty) {
+    if (authState is AuthAuthenticated &&
+        cubit.state.cuentas.isEmpty &&
+        !cubit.state.cargandoCuentas) {
       cubit.cargarCuentas(authState.correo);
     } else if (cubit.state.cuentaActiva != null) {
       _cuentaCtrl.text = cubit.state.cuentaActiva!.numeroCuenta;
@@ -158,7 +162,20 @@ class _CompraPageState extends State<CompraPage> {
             _cuentaCtrl.text = state.cuentas.first.numeroCuenta;
           }
           if (state is CompraExitosa) {
-            ComprobanteDialog.mostrar(context, transaccion: state.transaccion);
+            ComprobanteDialog.mostrar(
+              context,
+              transaccion: state.transaccion,
+              productoNombre: widget.producto.producto,
+            );
+          } else if (state is CompraRechazada && state.transaccion != null) {
+            if (state.transaccion!.idTransaccion == 0) {
+              context.read<HistorialCubit>().registrarTicketLocal(state.transaccion!);
+            }
+            ComprobanteDialog.mostrar(
+              context,
+              transaccion: state.transaccion!,
+              productoNombre: widget.producto.producto,
+            );
           }
         },
         builder: (context, state) {
@@ -259,6 +276,13 @@ class _CompraPageState extends State<CompraPage> {
                       },
                       onIntentarNuevo: () =>
                           context.read<CompraCubit>().prepararNuevaOperacion(),
+                      onVerTicket: (state is CompraRechazada && state.transaccion != null)
+                          ? () => ComprobanteDialog.mostrar(
+                                context,
+                                transaccion: state.transaccion!,
+                                productoNombre: widget.producto.producto,
+                              )
+                          : null,
                       onReintentarComunicacion: () =>
                           _confirmarCompra(context),
                     ),
@@ -272,7 +296,29 @@ class _CompraPageState extends State<CompraPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (state.cuentas.length > 1 &&
+                            if (state.cargandoCuentas && state.cuentas.isEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.brand,
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Cargando cuenta bancaria...',
+                                      style: TextStyle(color: AppColors.ink2),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ] else if (state.cuentas.length > 1 &&
                                 cuentaActiva != null) ...[
                               _SelectorCuenta(
                                 cuentas: state.cuentas,
@@ -293,8 +339,18 @@ class _CompraPageState extends State<CompraPage> {
                                 controller: _cuentaCtrl,
                                 enabled: !isLoading && !esExitosa,
                                 keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
+                                inputFormatters: AppInputFormatters.soloDigitos(13),
+                                decoration: InputDecoration(
                                   labelText: 'Número de cuenta',
+                                  suffixIcon: authState is AuthAuthenticated
+                                      ? IconButton(
+                                          tooltip: 'Cargar mi cuenta',
+                                          icon: const Icon(Icons.refresh_rounded, size: 20),
+                                          onPressed: () => context
+                                              .read<CompraCubit>()
+                                              .cargarCuentas(authState.correo),
+                                        )
+                                      : null,
                                 ),
                                 validator: (v) =>
                                     (v == null || v.trim().length < 10)
@@ -309,6 +365,9 @@ class _CompraPageState extends State<CompraPage> {
                               keyboardType: widget.producto.esRecarga
                                   ? TextInputType.phone
                                   : TextInputType.text,
+                              inputFormatters: widget.producto.esRecarga
+                                  ? AppInputFormatters.soloDigitos(10)
+                                  : AppInputFormatters.referenciaServicio,
                               decoration: InputDecoration(
                                 labelText: widget.producto.esRecarga
                                     ? 'Teléfono'
@@ -337,6 +396,7 @@ class _CompraPageState extends State<CompraPage> {
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                       decimal: true),
+                              inputFormatters: AppInputFormatters.decimal(maxEnteros: 7),
                               decoration: const InputDecoration(
                                 labelText: 'Importe (MXN)',
                               ),
@@ -353,6 +413,7 @@ class _CompraPageState extends State<CompraPage> {
                               controller: _pinCtrl,
                               obscureText: _ocultarPin,
                               enabled: !isLoading && !esExitosa,
+                              inputFormatters: AppInputFormatters.password,
                               decoration: InputDecoration(
                                 labelText: 'PIN o contraseña',
                                 suffixIcon: IconButton(
@@ -537,6 +598,7 @@ class _EstadoBanner extends StatelessWidget {
   final VoidCallback onVerHistorial;
   final VoidCallback onNuevoPago;
   final VoidCallback onIntentarNuevo;
+  final VoidCallback? onVerTicket;
   final VoidCallback onReintentarComunicacion;
 
   const _EstadoBanner({
@@ -545,6 +607,7 @@ class _EstadoBanner extends StatelessWidget {
     required this.onVerHistorial,
     required this.onNuevoPago,
     required this.onIntentarNuevo,
+    this.onVerTicket,
     required this.onReintentarComunicacion,
   });
 
@@ -625,6 +688,8 @@ class _EstadoBanner extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               s.mensaje,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppColors.ink, fontSize: 13.5),
             ),
             if (s.transaccion != null) ...[
@@ -666,12 +731,33 @@ class _EstadoBanner extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               s.mensaje,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppColors.ink, fontSize: 13.5),
             ),
             const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: onIntentarNuevo,
-              child: const Text('Intentar de nuevo'),
+            Row(
+              children: [
+                if (onVerTicket != null) ...[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onVerTicket,
+                      child: const Text('Ver ticket'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                      minimumSize: const Size(0, 44),
+                    ),
+                    onPressed: onIntentarNuevo,
+                    child: const Text('Intentar de nuevo'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

@@ -1,6 +1,16 @@
 import '../../domain/entities/cuenta_entity.dart';
 import '../../domain/entities/transaccion_entity.dart';
 
+int? _asInt(dynamic v) =>
+    v is int ? v : (v is num ? v.toInt() : int.tryParse('${v ?? ''}'));
+
+double? _asDouble(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  final cleaned = v.toString().trim().replaceAll(',', '');
+  return double.tryParse(cleaned);
+}
+
 class TransaccionModel extends TransaccionEntity {
   const TransaccionModel({
     required super.idTransaccion,
@@ -19,20 +29,21 @@ class TransaccionModel extends TransaccionEntity {
   });
 
   factory TransaccionModel.fromJson(Map<String, dynamic> json) {
-    final fechaStr = json['fechaTransaccion'] as String?;
+    final rawFecha = json['fechaTransaccion'];
+    final fechaStr = rawFecha is String ? rawFecha : rawFecha?.toString();
     return TransaccionModel(
-      idTransaccion: (json['idTransaccion'] as num?)?.toInt() ?? 0,
-      upc: (json['upc'] as String?) ?? '',
-      idTxGestoPago: json['idTxGestoPago'] as String?,
-      numeroAutorizacion: json['numeroAutorizacion'] as String?,
-      numeroCuenta: (json['numeroCuenta'] as String?) ?? '',
-      montoDebitado: (json['montoDebitado'] as num?)?.toDouble() ?? 0.0,
-      saldoRestante: (json['saldoRestante'] as num?)?.toDouble(),
-      telefonoReferencia: (json['telefonoReferencia'] as String?) ?? '',
-      idProducto: (json['idProducto'] as num?)?.toInt(),
-      idServicio: (json['idServicio'] as num?)?.toInt(),
-      estatus: (json['estatus'] as String?) ?? 'DESCONOCIDO',
-      mensaje: (json['mensaje'] as String?) ?? '',
+      idTransaccion: _asInt(json['idTransaccion']) ?? 0,
+      upc: json['upc']?.toString() ?? '',
+      idTxGestoPago: json['idTxGestoPago']?.toString(),
+      numeroAutorizacion: json['numeroAutorizacion']?.toString(),
+      numeroCuenta: json['numeroCuenta']?.toString() ?? '',
+      montoDebitado: _asDouble(json['montoDebitado']) ?? 0.0,
+      saldoRestante: _asDouble(json['saldoRestante']),
+      telefonoReferencia: json['telefonoReferencia']?.toString() ?? '',
+      idProducto: _asInt(json['idProducto']),
+      idServicio: _asInt(json['idServicio']),
+      estatus: json['estatus']?.toString() ?? 'DESCONOCIDO',
+      mensaje: json['mensaje']?.toString() ?? '',
       fechaTransaccion: fechaStr != null ? DateTime.tryParse(fechaStr) : null,
     );
   }
@@ -48,10 +59,13 @@ class CuentaModel extends CuentaEntity {
 
   factory CuentaModel.fromJson(Map<String, dynamic> json) {
     return CuentaModel(
-      id: (json['id'] as num?)?.toInt() ?? 0,
-      numeroCuenta: (json['numeroCuenta'] as String?) ?? '',
-      saldo: (json['saldo'] as num?)?.toDouble() ?? 0.0,
-      estatus: (json['estatus'] as String?) ?? 'ACTIVA',
+      id: _asInt(json['id']) ?? 0,
+      numeroCuenta: (json['numeroCuenta'] ?? json['numero_cuenta'])?.toString().trim() ?? '',
+      saldo: _asDouble(
+            json['saldo'] ?? json['saldoDisponible'] ?? json['saldo_disponible'],
+          ) ??
+          0.0,
+      estatus: (json['estatus'] ?? json['estado'])?.toString().trim() ?? 'ACTIVA',
     );
   }
 }

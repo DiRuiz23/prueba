@@ -1,22 +1,29 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/input_formatters.dart';
+import '../../../../core/widgets/auth_aura_background.dart';
 import '../cubit/auth_cubit.dart';
 import '../cubit/auth_state.dart';
+import '../widgets/totp_setup_panel.dart';
 
 class OtpVerificationPage extends StatefulWidget {
   final String correo;
-  final int segundosIniciales;
   final String mensajeInicial;
+  final bool requiereConfiguracionTotp;
+  final String? totpSecreto;
+  final String? totpOtpAuthUri;
+  final String? totpQrBase64;
 
   const OtpVerificationPage({
     super.key,
     required this.correo,
-    this.segundosIniciales = 300,
     this.mensajeInicial = '',
+    this.requiereConfiguracionTotp = false,
+    this.totpSecreto,
+    this.totpOtpAuthUri,
+    this.totpQrBase64,
   });
 
   @override
@@ -26,33 +33,12 @@ class OtpVerificationPage extends StatefulWidget {
 class _OtpVerificationPageState extends State<OtpVerificationPage> {
   final _formKey = GlobalKey<FormState>();
   final _codigoCtrl = TextEditingController();
-  late int _segundosRestantes;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _segundosRestantes = widget.segundosIniciales;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      if (_segundosRestantes <= 1) {
-        setState(() => _segundosRestantes = 0);
-        timer.cancel();
-      } else {
-        setState(() => _segundosRestantes--);
-      }
-    });
-  }
 
   @override
   void dispose() {
-    _timer?.cancel();
     _codigoCtrl.dispose();
     super.dispose();
   }
-
-  String _formatoTiempo(int seg) =>
-      '${(seg ~/ 60).toString().padLeft(2, '0')}:${(seg % 60).toString().padLeft(2, '0')}';
 
   void _validarOtp(BuildContext context) {
     if (!_formKey.currentState!.validate()) return;
@@ -64,125 +50,148 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final progreso = widget.segundosIniciales > 0
-        ? (_segundosRestantes / widget.segundosIniciales).clamp(0.0, 1.0)
-        : 0.0;
-    final bajo = _segundosRestantes <= 30;
+    final mostrarConfiguracion = widget.requiereConfiguracionTotp &&
+        (widget.totpSecreto != null && widget.totpSecreto!.isNotEmpty);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Verificación'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            context.read<AuthCubit>().cancelarConflicto();
-            context.go('/login');
+      body: AuthAuraBackground(
+        child: BlocConsumer<AuthCubit, AuthState>(
+          listener: (context, state) {
+            if (state is AuthAuthenticated) context.go('/catalogo');
           },
-        ),
-      ),
-      body: BlocConsumer<AuthCubit, AuthState>(
-        listener: (context, state) {
-          if (state is AuthAuthenticated) context.go('/catalogo');
-        },
-        builder: (context, state) {
-          final isLoading = state is AuthLoading;
+          builder: (context, state) {
+            final isLoading = state is AuthLoading;
 
-          return SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          widget.correo,
-                          style: const TextStyle(color: AppColors.ink2, fontSize: 14),
+            return SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: AppColors.ink,
                         ),
-                        const SizedBox(height: 20),
-                        if (state is AuthError)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.dangerSoft,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              state.mensaje,
-                              style: const TextStyle(color: AppColors.danger, fontSize: 13.5),
-                            ),
-                          ),
-                        TextFormField(
-                          controller: _codigoCtrl,
-                          enabled: !isLoading && _segundosRestantes > 0,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          maxLength: 6,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 10,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Código de 6 dígitos',
-                            counterText: '',
-                          ),
-                          validator: (v) => (v == null || v.trim().length != 6)
-                              ? 'Ingresa los 6 dígitos'
-                              : null,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: LinearProgressIndicator(
-                                value: progreso,
-                                minHeight: 4,
-                                borderRadius: BorderRadius.circular(99),
-                                color: bajo ? AppColors.danger : AppColors.brand,
-                                backgroundColor: AppColors.line,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              _formatoTiempo(_segundosRestantes),
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: bajo ? AppColors.danger : AppColors.ink2,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 22),
-                        FilledButton(
-                          onPressed: (isLoading || _segundosRestantes <= 0)
-                              ? null
-                              : () => _validarOtp(context),
-                          child: isLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Verificar'),
-                        ),
-                      ],
+                        onPressed: () {
+                          context.read<AuthCubit>().cancelarConflicto();
+                          context.go('/login');
+                        },
+                      ),
                     ),
                   ),
-                ),
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 28, vertical: 16),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 400),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Text(
+                                  'Google Authenticator',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.4,
+                                    color: AppColors.ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  mostrarConfiguracion
+                                      ? 'Vincula tu cuenta ${widget.correo} con código QR o clave manual e ingresa el código de 6 dígitos.'
+                                      : 'Ingresa el código de 6 dígitos de tu app para ${widget.correo}',
+                                  style: const TextStyle(
+                                    color: AppColors.ink2,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                if (state is AuthError)
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.dangerSoft,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Text(
+                                      state.mensaje,
+                                      style: const TextStyle(
+                                        color: AppColors.danger,
+                                        fontSize: 13.5,
+                                      ),
+                                    ),
+                                  ),
+                                if (mostrarConfiguracion) ...[
+                                  TotpSetupPanel(
+                                    correo: widget.correo,
+                                    secreto: widget.totpSecreto!,
+                                    qrBase64: widget.totpQrBase64 ?? '',
+                                  ),
+                                  const SizedBox(height: 18),
+                                ],
+                                TextFormField(
+                                  controller: _codigoCtrl,
+                                  enabled: !isLoading,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  inputFormatters:
+                                      AppInputFormatters.soloDigitos(6),
+                                  style: const TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 10,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
+                                  decoration: AppTheme.pillInputDecoration(
+                                    hintText: '000000',
+                                    counterText: '',
+                                  ),
+                                  validator: (v) =>
+                                      (v == null || v.trim().length != 6)
+                                          ? 'Ingresa los 6 dígitos'
+                                          : null,
+                                ),
+                                const SizedBox(height: 14),
+                                const Text(
+                                  'Los códigos se renuevan automáticamente cada 30 s.',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: AppColors.ink2,
+                                  ),
+                                ),
+                                const SizedBox(height: 28),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: PillActionButton(
+                                    label: 'Verificar',
+                                    icon: Icons.verified_user_outlined,
+                                    loading: isLoading,
+                                    onPressed: () => _validarOtp(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

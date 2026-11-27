@@ -4,6 +4,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:apphasani_mobile/core/error/exceptions.dart';
+import 'package:apphasani_mobile/features/compra/domain/entities/cuenta_entity.dart';
 import 'package:apphasani_mobile/features/compra/domain/entities/transaccion_entity.dart';
 import 'package:apphasani_mobile/features/compra/domain/repositories/compra_repository.dart';
 import 'package:apphasani_mobile/features/compra/presentation/cubit/compra_cubit.dart';
@@ -155,6 +156,104 @@ void main() {
           transaccion: txExitosa,
           idempotencyKey: 'idem-uuid-1234',
         ),
+      ],
+    );
+
+    const cuentaActiva = CuentaEntity(
+      id: 1,
+      numeroCuenta: '0120000000000001',
+      saldo: 1000.0,
+      estatus: 'ACTIVA',
+    );
+
+    blocTest<CompraCubit, CompraState>(
+      'cargarCuentas carga la cuenta activa y su saldo disponible',
+      build: () {
+        when(() => mockRepo.obtenerCuentasCliente('cliente@banco.com'))
+            .thenAnswer((_) async => const [cuentaActiva]);
+        return crearCubit();
+      },
+      act: (cubit) => cubit.cargarCuentas('cliente@banco.com'),
+      expect: () => const [
+        CompraInitial(
+          idempotencyKey: 'idem-uuid-1234',
+          cargandoCuentas: true,
+        ),
+        CompraInitial(
+          idempotencyKey: 'idem-uuid-1234',
+          cuentas: [cuentaActiva],
+          cuentaActiva: cuentaActiva,
+          cargandoCuentas: false,
+          errorCuentas: null,
+        ),
+      ],
+    );
+
+    blocTest<CompraCubit, CompraState>(
+      'cargarCuentas expone errorCuentas cuando falla la consulta',
+      build: () {
+        when(() => mockRepo.obtenerCuentasCliente('cliente@banco.com'))
+            .thenThrow(const ServerException(message: 'Error al consultar cuentas'));
+        return crearCubit();
+      },
+      act: (cubit) => cubit.cargarCuentas('cliente@banco.com'),
+      expect: () => const [
+        CompraInitial(
+          idempotencyKey: 'idem-uuid-1234',
+          cargandoCuentas: true,
+        ),
+        CompraInitial(
+          idempotencyKey: 'idem-uuid-1234',
+          cargandoCuentas: false,
+          errorCuentas: 'Error al consultar cuentas',
+        ),
+      ],
+    );
+
+    blocTest<CompraCubit, CompraState>(
+      'ejecutarCompra emite CompraRechazada con ticket y UPC ante ServerException 502',
+      build: () {
+        when(() => mockRepo.ejecutarPago(
+              numeroCuenta: '0120000000000001',
+              idProducto: 582,
+              idServicio: 133,
+              telefonoReferencia: '5512345678',
+              monto: 50.0,
+              pin: '1234',
+              idempotencyKey: 'idem-uuid-1234',
+            )).thenThrow(const ServerException(
+          message: 'Transacción rechazada por el proveedor',
+          statusCode: 502,
+          data: {
+            'codigo': 1,
+            'mensaje': 'Transacción rechazada por el proveedor',
+            'datos': {
+              'idTransaccion': 88,
+              'upc': 'GP9988776655',
+              'numeroCuenta': '0120000000000001',
+              'montoDebitado': 50.0,
+              'telefonoReferencia': '5512345678',
+              'estatus': 'RECHAZADA',
+              'mensaje': 'Referencia inválida',
+            },
+          },
+        ));
+        return crearCubit();
+      },
+      act: (cubit) => cubit.ejecutarCompra(
+        numeroCuenta: '0120000000000001',
+        idProducto: 582,
+        idServicio: 133,
+        telefonoReferencia: '5512345678',
+        monto: 50.0,
+        pin: '1234',
+      ),
+      expect: () => [
+        const CompraLoading(idempotencyKey: 'idem-uuid-1234'),
+        isA<CompraRechazada>()
+            .having((s) => s.transaccion?.upc, 'upc', 'GP9988776655')
+            .having((s) => s.transaccion?.idTransaccion, 'idTransaccion', 88)
+            .having((s) => s.transaccion?.estatus, 'estatus', 'RECHAZADA'),
       ],
     );
   });

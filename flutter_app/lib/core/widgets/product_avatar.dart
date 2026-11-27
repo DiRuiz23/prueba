@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import '../../features/catalogo/domain/entities/producto_entity.dart';
+import '../config/env_config.dart';
 
 class ProductAvatar extends StatelessWidget {
   final ProductoEntity producto;
   final double size;
+  final bool circular;
 
-  const ProductAvatar({super.key, required this.producto, this.size = 42});
+  const ProductAvatar({
+    super.key,
+    required this.producto,
+    this.size = 42,
+    this.circular = false,
+  });
 
   (String, Color, Color) _estilo() {
     final t = '${producto.servicio} ${producto.producto}'.toLowerCase();
@@ -22,17 +29,72 @@ class ProductAvatar extends StatelessWidget {
     return (sig, const Color(0xFFEEF0F4), const Color(0xFF475569));
   }
 
-  @override
-  Widget build(BuildContext context) {
+  static String urlImagenServicio(int idServicio) {
+    final base = EnvConfig.baseUrl.replaceFirst(RegExp(r'/+$'), '');
+    return '$base/gestopago/servicios/$idServicio/imagen';
+  }
+
+  String? get _imageUrl =>
+      producto.idServicio > 0 ? urlImagenServicio(producto.idServicio) : null;
+
+  Widget _buildFallback() {
     final (siglas, bg, fg) = _estilo();
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        color: bg,
+        shape: circular ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: circular ? null : BorderRadius.circular(10),
+        border: circular ? Border.all(color: const Color(0xFFE6E8EC)) : null,
+      ),
       alignment: Alignment.center,
       child: Text(
         siglas,
         style: TextStyle(fontWeight: FontWeight.w700, color: fg, fontSize: size * 0.33),
+      ),
+    );
+  }
+
+  Widget _buildImageFrame(Widget child) {
+    final shapeRadius = circular ? size / 2 : 10.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: circular ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: circular ? null : BorderRadius.circular(shapeRadius),
+        border: Border.all(color: const Color(0xFFE6E8EC)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.all(size * 0.12),
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _imageUrl;
+    if (url == null) {
+      return _buildFallback();
+    }
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _buildFallback(),
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) {
+            return _buildImageFrame(child);
+          }
+          return _buildFallback();
+        },
       ),
     );
   }

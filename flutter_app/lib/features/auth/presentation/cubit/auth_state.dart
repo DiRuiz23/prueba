@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../data/models/registro_cliente_model.dart';
 
 abstract class AuthState extends Equatable {
   const AuthState();
@@ -41,15 +42,34 @@ class AuthOtpRequired extends AuthState {
   final String correo;
   final int segundosExpiracion;
   final String mensaje;
+  final String metodo2fa;
+  final bool requiereConfiguracionTotp;
+  final String? totpSecreto;
+  final String? totpOtpAuthUri;
+  final String? totpQrBase64;
 
   const AuthOtpRequired({
     required this.correo,
     required this.segundosExpiracion,
     required this.mensaje,
+    this.metodo2fa = 'GOOGLE_AUTHENTICATOR',
+    this.requiereConfiguracionTotp = false,
+    this.totpSecreto,
+    this.totpOtpAuthUri,
+    this.totpQrBase64,
   });
 
   @override
-  List<Object?> get props => [correo, segundosExpiracion, mensaje];
+  List<Object?> get props => [
+        correo,
+        segundosExpiracion,
+        mensaje,
+        metodo2fa,
+        requiereConfiguracionTotp,
+        totpSecreto,
+        totpOtpAuthUri,
+        totpQrBase64,
+      ];
 }
 
 class AuthAuthenticated extends AuthState {
@@ -83,5 +103,14 @@ class AuthError extends AuthState {
 
   @override
   List<Object?> get props => [mensaje, duranteOtp, correoEnProceso];
+}
+
+class AuthRegistroExitoso extends AuthState {
+  final RegistroClienteResult resultado;
+
+  const AuthRegistroExitoso(this.resultado);
+
+  @override
+  List<Object?> get props => [resultado];
 }
 

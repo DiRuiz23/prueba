@@ -42,7 +42,11 @@ Future<void> initDependencies() async {
     () => AuthRemoteDataSourceImpl(dioClient: sl()),
   );
   sl.registerLazySingleton<AuthRepository>(
-    () => AuthRepositoryImpl(remoteDataSource: sl(), secureStorage: sl()),
+    () => AuthRepositoryImpl(
+      remoteDataSource: sl(),
+      secureStorage: sl(),
+      authInterceptor: sl(),
+    ),
   );
   sl.registerLazySingleton(() => LoginUseCase(sl()));
   sl.registerLazySingleton(() => VerificarOtpUseCase(sl()));

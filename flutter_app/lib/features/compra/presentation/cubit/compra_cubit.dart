@@ -1,7 +1,11 @@
+import 'dart:developer' as dev;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../data/models/compra_models.dart';
 import '../../domain/entities/cuenta_entity.dart';
+import '../../domain/entities/transaccion_entity.dart';
 import '../../domain/repositories/compra_repository.dart';
 import 'compra_state.dart';
 
@@ -16,28 +20,89 @@ class CompraCubit extends Cubit<CompraState> {
         super(CompraInitial(idempotencyKey: (uuid ?? const Uuid()).v4()));
 
   Future<void> cargarCuentas(String correo) async {
+    if (state.cargandoCuentas || correo.trim().isEmpty) return;
+    emit(CompraInitial(
+      idempotencyKey: state.idempotencyKey,
+      cuentas: state.cuentas,
+      cuentaActiva: state.cuentaActiva,
+      cargandoCuentas: true,
+    ));
     try {
       final lista = await repository.obtenerCuentasCliente(correo);
+      final cuentas = List<CuentaEntity>.from(lista);
       CuentaEntity? activa = state.cuentaActiva;
-      if (activa != null) {
-        activa = lista.firstWhere(
-          (c) => c.numeroCuenta == activa!.numeroCuenta,
-          orElse: () => lista.isNotEmpty ? lista.first : activa!,
+      if (activa != null && cuentas.isNotEmpty) {
+        final numeroPrevio = activa.numeroCuenta;
+        activa = cuentas.firstWhere(
+          (c) => c.numeroCuenta == numeroPrevio,
+          orElse: () => cuentas.first,
         );
-      } else if (lista.isNotEmpty) {
-        activa = lista.firstWhere(
+      } else if (cuentas.isNotEmpty) {
+        activa = cuentas.firstWhere(
           (c) => c.estatus == 'ACTIVA',
-          orElse: () => lista.first,
+          orElse: () => cuentas.first,
         );
+      } else {
+        activa = null;
       }
       emit(CompraInitial(
         idempotencyKey: state.idempotencyKey,
-        cuentas: lista,
+        cuentas: cuentas,
         cuentaActiva: activa,
+        cargandoCuentas: false,
+        errorCuentas: cuentas.isEmpty ? 'No se encontraron cuentas asociadas.' : null,
       ));
-    } catch (_) {
-      // El usuario aún puede ingresar su cuenta manualmente si falla la carga.
+    } on UnauthorizedException catch (e) {
+      emit(CompraInitial(
+        idempotencyKey: state.idempotencyKey,
+        cuentas: state.cuentas,
+        cuentaActiva: state.cuentaActiva,
+        cargandoCuentas: false,
+        errorCuentas: e.message,
+      ));
+    } on ServerException catch (e) {
+      emit(CompraInitial(
+        idempotencyKey: state.idempotencyKey,
+        cuentas: state.cuentas,
+        cuentaActiva: state.cuentaActiva,
+        cargandoCuentas: false,
+        errorCuentas: e.message,
+      ));
+    } on NetworkTimeoutException catch (e) {
+      emit(CompraInitial(
+        idempotencyKey: state.idempotencyKey,
+        cuentas: state.cuentas,
+        cuentaActiva: state.cuentaActiva,
+        cargandoCuentas: false,
+        errorCuentas: e.message,
+      ));
+    } on NetworkConnectionException catch (e) {
+      emit(CompraInitial(
+        idempotencyKey: state.idempotencyKey,
+        cuentas: state.cuentas,
+        cuentaActiva: state.cuentaActiva,
+        cargandoCuentas: false,
+        errorCuentas: e.message,
+      ));
+    } catch (e, st) {
+      dev.log('Error cargando cuentas: $e', name: 'CompraCubit', stackTrace: st);
+      debugPrint('Error cargando cuentas: $e\n$st');
+      final detalleRaw = e.toString().replaceAll('\n', ' ').trim();
+      final detalle = detalleRaw.length > 140
+          ? '${detalleRaw.substring(0, 140)}...'
+          : detalleRaw;
+      emit(CompraInitial(
+        idempotencyKey: state.idempotencyKey,
+        cuentas: state.cuentas,
+        cuentaActiva: state.cuentaActiva,
+        cargandoCuentas: false,
+        errorCuentas: 'No se pudo consultar tu cuenta y saldo: $detalle',
+      ));
     }
+  }
+
+  void limpiarCuentas() {
+    emit(CompraInitial(idempotencyKey: _uuid.v4()));
   }
 
   void seleccionarCuenta(String numeroCuenta) {
@@ -112,6 +177,7 @@ class CompraCubit extends Cubit<CompraState> {
       } else {
         emit(CompraRechazada(
           mensaje: tx.mensaje,
+          transaccion: tx,
           idempotencyKey: key,
           cuentas: cuentasActuales,
           cuentaActiva: activaActual,
@@ -140,8 +206,29 @@ class CompraCubit extends Cubit<CompraState> {
           cuentaActiva: activaActual,
         ));
       } else {
+        TransaccionEntity txRechazo;
+        final rawDatos = (e.data is Map) ? (e.data as Map)['datos'] : null;
+        if (rawDatos is Map) {
+          txRechazo = TransaccionModel.fromJson(
+            rawDatos.map((k, v) => MapEntry(k.toString(), v)),
+          );
+        } else {
+          txRechazo = TransaccionEntity(
+            idTransaccion: 0,
+            upc: 'No generado (validación previa)',
+            numeroCuenta: numeroCuenta,
+            montoDebitado: monto,
+            telefonoReferencia: telefonoReferencia,
+            idProducto: idProducto,
+            idServicio: idServicio,
+            estatus: 'RECHAZADA',
+            mensaje: e.message,
+            fechaTransaccion: DateTime.now(),
+          );
+        }
         emit(CompraRechazada(
           mensaje: e.message,
+          transaccion: txRechazo,
           idempotencyKey: key,
           cuentas: cuentasActuales,
           cuentaActiva: activaActual,
@@ -188,6 +275,7 @@ class CompraCubit extends Cubit<CompraState> {
       } else {
         emit(CompraRechazada(
           mensaje: tx.mensaje,
+          transaccion: tx,
           idempotencyKey: key,
           cuentas: cuentasActuales,
           cuentaActiva: activaActual,
@@ -208,6 +296,8 @@ class CompraCubit extends Cubit<CompraState> {
       idempotencyKey: _uuid.v4(),
       cuentas: state.cuentas,
       cuentaActiva: state.cuentaActiva,
+      cargandoCuentas: state.cargandoCuentas,
+      errorCuentas: state.errorCuentas,
     ));
   }
 }

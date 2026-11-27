@@ -168,7 +168,15 @@ class _TransaccionTile extends StatelessWidget {
     final esExitosa = tx.esExitosa;
     final badgeLabel = esExitosa
         ? 'Exitosa'
-        : (tx.estaEnProceso ? 'En proceso' : tx.estatus);
+        : (tx.estaEnProceso
+            ? 'En proceso'
+            : ((tx.estatus == 'RECHAZADA' || tx.estatus == 'FALLIDA')
+                ? 'Rechazada'
+                : (tx.estatus == 'REVERSADA' ? 'Reversada' : tx.estatus)));
+    final subtitulo = [
+      if (fecha.isNotEmpty) fecha,
+      if (tx.upc.trim().isNotEmpty) 'UPC: ${tx.upc.trim()}',
+    ].join(' · ');
     final badgeBg = esExitosa
         ? AppColors.brandSoft
         : (tx.estaEnProceso ? AppColors.warnSoft : AppColors.dangerSoft);
@@ -196,10 +204,12 @@ class _TransaccionTile extends StatelessWidget {
                       color: AppColors.ink,
                     ),
                   ),
-                  if (fecha.isNotEmpty) ...[
+                  if (subtitulo.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      fecha,
+                      subtitulo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.ink2,

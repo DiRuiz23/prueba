@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../config/env_config.dart';
 import '../error/exceptions.dart';
 import 'auth_interceptor.dart';
@@ -59,12 +61,30 @@ class DioClient {
       return const NetworkConnectionException();
     }
 
+    if (e.type == DioExceptionType.unknown) {
+      debugPrint('DioException unknown (${e.requestOptions.path}): ${e.error ?? e.message}');
+    }
+
     final status = e.response?.statusCode;
-    final body = e.response?.data;
+    dynamic body = e.response?.data;
+    if (body is String && body.trim().isNotEmpty) {
+      try {
+        body = jsonDecode(body);
+      } catch (_) {}
+    }
     String mensaje = 'Ocurrió un error al procesar la solicitud.';
 
-    if (body is Map<String, dynamic> && body['mensaje'] is String) {
-      mensaje = body['mensaje'] as String;
+    if (body is Map) {
+      final errores = body['errores'];
+      if (errores is Map && errores.isNotEmpty) {
+        final partes = <String>[];
+        for (final v in errores.values) {
+          partes.add(v.toString());
+        }
+        mensaje = partes.join(' · ');
+      } else if (body['mensaje'] != null && body['mensaje'].toString().isNotEmpty) {
+        mensaje = body['mensaje'].toString();
+      }
     }
 
     if (status == 401) {

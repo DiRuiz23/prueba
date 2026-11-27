@@ -6,6 +6,7 @@ import 'core/di/injection_container.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
+import 'features/auth/presentation/cubit/auth_state.dart';
 import 'features/catalogo/presentation/cubit/catalogo_cubit.dart';
 import 'features/compra/presentation/cubit/compra_cubit.dart';
 import 'features/historial/presentation/cubit/historial_cubit.dart';
@@ -32,14 +33,33 @@ class AppHasaniApp extends StatelessWidget {
       providers: [
         BlocProvider<AuthCubit>.value(value: authCubit),
         BlocProvider<CatalogoCubit>(create: (_) => sl<CatalogoCubit>()),
-        BlocProvider<CompraCubit>(create: (_) => sl<CompraCubit>()),
+        BlocProvider<CompraCubit>(
+          create: (_) {
+            final cubit = sl<CompraCubit>();
+            final s = authCubit.state;
+            if (s is AuthAuthenticated) {
+              cubit.cargarCuentas(s.correo);
+            }
+            return cubit;
+          },
+        ),
         BlocProvider<HistorialCubit>(create: (_) => sl<HistorialCubit>()),
       ],
-      child: MaterialApp.router(
-        title: 'AppHasani',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        routerConfig: router,
+      child: BlocListener<AuthCubit, AuthState>(
+        listener: (context, state) {
+          if (state is AuthAuthenticated) {
+            context.read<CompraCubit>().cargarCuentas(state.correo);
+          } else if (state is AuthUnauthenticated) {
+            context.read<CompraCubit>().limpiarCuentas();
+            context.read<HistorialCubit>().limpiarTicketsLocales();
+          }
+        },
+        child: MaterialApp.router(
+          title: 'AppHasani',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          routerConfig: router,
+        ),
       ),
     );
   }

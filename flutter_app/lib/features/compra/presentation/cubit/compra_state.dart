@@ -6,15 +6,25 @@ abstract class CompraState extends Equatable {
   final String idempotencyKey;
   final List<CuentaEntity> cuentas;
   final CuentaEntity? cuentaActiva;
+  final bool cargandoCuentas;
+  final String? errorCuentas;
 
   const CompraState({
     required this.idempotencyKey,
     this.cuentas = const [],
     this.cuentaActiva,
+    this.cargandoCuentas = false,
+    this.errorCuentas,
   });
 
   @override
-  List<Object?> get props => [idempotencyKey, cuentas, cuentaActiva];
+  List<Object?> get props => [
+        idempotencyKey,
+        cuentas,
+        cuentaActiva,
+        cargandoCuentas,
+        errorCuentas,
+      ];
 }
 
 class CompraInitial extends CompraState {
@@ -22,6 +32,8 @@ class CompraInitial extends CompraState {
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 }
 
@@ -30,6 +42,8 @@ class CompraLoading extends CompraState {
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 }
 
@@ -41,10 +55,19 @@ class CompraExitosa extends CompraState {
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 
   @override
-  List<Object?> get props => [transaccion, idempotencyKey, cuentas, cuentaActiva];
+  List<Object?> get props => [
+        transaccion,
+        idempotencyKey,
+        cuentas,
+        cuentaActiva,
+        cargandoCuentas,
+        errorCuentas,
+      ];
 }
 
 class CompraPendienteIncierta extends CompraState {
@@ -57,24 +80,46 @@ class CompraPendienteIncierta extends CompraState {
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 
   @override
-  List<Object?> get props => [transaccion, mensaje, idempotencyKey, cuentas, cuentaActiva];
+  List<Object?> get props => [
+        transaccion,
+        mensaje,
+        idempotencyKey,
+        cuentas,
+        cuentaActiva,
+        cargandoCuentas,
+        errorCuentas,
+      ];
 }
 
 class CompraRechazada extends CompraState {
   final String mensaje;
+  final TransaccionEntity? transaccion;
 
   const CompraRechazada({
     required this.mensaje,
+    this.transaccion,
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 
   @override
-  List<Object?> get props => [mensaje, idempotencyKey, cuentas, cuentaActiva];
+  List<Object?> get props => [
+        mensaje,
+        transaccion,
+        idempotencyKey,
+        cuentas,
+        cuentaActiva,
+        cargandoCuentas,
+        errorCuentas,
+      ];
 }
 
 class CompraErrorComunicacion extends CompraState {
@@ -85,8 +130,17 @@ class CompraErrorComunicacion extends CompraState {
     required super.idempotencyKey,
     super.cuentas,
     super.cuentaActiva,
+    super.cargandoCuentas,
+    super.errorCuentas,
   });
 
   @override
-  List<Object?> get props => [mensaje, idempotencyKey, cuentas, cuentaActiva];
+  List<Object?> get props => [
+        mensaje,
+        idempotencyKey,
+        cuentas,
+        cuentaActiva,
+        cargandoCuentas,
+        errorCuentas,
+      ];
 }

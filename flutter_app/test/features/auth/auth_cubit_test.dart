@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:apphasani_mobile/core/error/exceptions.dart';
+import 'package:apphasani_mobile/features/auth/data/models/registro_cliente_model.dart';
 import 'package:apphasani_mobile/features/auth/domain/entities/auth_result_entity.dart';
 import 'package:apphasani_mobile/features/auth/domain/repositories/auth_repository.dart';
 import 'package:apphasani_mobile/features/auth/domain/usecases/auth_usecases.dart';
@@ -11,7 +12,12 @@ import 'package:apphasani_mobile/features/auth/presentation/cubit/auth_state.dar
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
+class FakeRegistroClienteParams extends Fake implements RegistroClienteParams {}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(FakeRegistroClienteParams());
+  });
   late MockAuthRepository mockRepo;
   late LoginUseCase loginUseCase;
   late VerificarOtpUseCase verificarOtpUseCase;
@@ -33,7 +39,7 @@ void main() {
 
   group('AuthCubit - Flujo de autenticación, 2FA y sesión única', () {
     blocTest<AuthCubit, AuthState>(
-      'emite AuthOtpRequired cuando credenciales son válidas y requiere 2FA',
+      'emite AuthOtpRequired con Google Authenticator y datos de vinculación QR/clave cuando requiere 2FA',
       build: () {
         when(() => mockRepo.login(
               correo: 'usuario@banco.com',
@@ -43,8 +49,13 @@ void main() {
           (_) async => const AuthResultEntity(
             correo: 'usuario@banco.com',
             requiere2fa: true,
+            metodo2fa: 'GOOGLE_AUTHENTICATOR',
+            requiereConfiguracionTotp: true,
+            totpSecreto: 'JBSWY3DPEHPK3PXP',
+            totpOtpAuthUri: 'otpauth://totp/AppHasani:usuario@banco.com?secret=JBSWY3DPEHPK3PXP',
+            totpQrBase64: 'iVBORw0KGgo=',
             tiempoExpiracionOtpSegundos: 300,
-            mensaje: 'OTP enviado',
+            mensaje: 'Vincula Google Authenticator',
           ),
         );
         return crearCubit();
@@ -58,7 +69,12 @@ void main() {
         AuthOtpRequired(
           correo: 'usuario@banco.com',
           segundosExpiracion: 300,
-          mensaje: 'OTP enviado',
+          mensaje: 'Vincula Google Authenticator',
+          metodo2fa: 'GOOGLE_AUTHENTICATOR',
+          requiereConfiguracionTotp: true,
+          totpSecreto: 'JBSWY3DPEHPK3PXP',
+          totpOtpAuthUri: 'otpauth://totp/AppHasani:usuario@banco.com?secret=JBSWY3DPEHPK3PXP',
+          totpQrBase64: 'iVBORw0KGgo=',
         ),
       ],
     );
@@ -152,6 +168,56 @@ void main() {
       act: (cubit) => cubit.cerrarSesion('Sesión finalizada'),
       expect: () => const [
         AuthUnauthenticated('Sesión finalizada'),
+      ],
+    );
+
+    blocTest<AuthCubit, AuthState>(
+      'registrarCliente emite AuthRegistroExitoso cuando el alta es válida',
+      build: () {
+        when(() => mockRepo.registrarCliente(any())).thenAnswer(
+          (_) async => const RegistroClienteResult(
+            id: 20,
+            nombreCompleto: 'Ana López Ruiz',
+            correo: 'ana@banco.com',
+            numeroCuenta: '0123456789012',
+          ),
+        );
+        return crearCubit();
+      },
+      act: (cubit) => cubit.registrarCliente(
+        const RegistroClienteParams(
+          nombre: 'Ana',
+          apellidoPaterno: 'López',
+          apellidoMaterno: 'Ruiz',
+          fechaNacimiento: '1998-05-10',
+          curp: 'LORA980510MDFRN09',
+          rfc: 'LORA980510ABC',
+          sexo: 'M',
+          estadoCivil: 'SOLTERO',
+          correo: 'ana@banco.com',
+          telefonoMovil: '5512345678',
+          ocupacion: 'Ingeniera',
+          empresa: 'Tech',
+          ingresoMensual: 15000,
+          calle: 'Reforma',
+          numeroExterior: '100',
+          colonia: 'Juárez',
+          municipio: 'Cuauhtémoc',
+          estado: 'Ciudad de México',
+          codigoPostal: '06600',
+          password: 'Password123!',
+        ),
+      ),
+      expect: () => const [
+        AuthLoading('Creando cuenta...'),
+        AuthRegistroExitoso(
+          RegistroClienteResult(
+            id: 20,
+            nombreCompleto: 'Ana López Ruiz',
+            correo: 'ana@banco.com',
+            numeroCuenta: '0123456789012',
+          ),
+        ),
       ],
     );
   });

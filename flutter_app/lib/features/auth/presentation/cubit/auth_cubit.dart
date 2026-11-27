@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/error/exceptions.dart';
+import '../../data/models/registro_cliente_model.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 import 'auth_state.dart';
@@ -68,12 +69,19 @@ class AuthCubit extends Cubit<AuthState> {
         emit(AuthOtpRequired(
           correo: res.correo,
           segundosExpiracion: res.tiempoExpiracionOtpSegundos ?? 300,
-          mensaje: res.mensaje ?? 'Código de verificación enviado.',
+          mensaje: res.mensaje ?? 'Ingresa el código de Google Authenticator.',
+          metodo2fa: res.metodo2fa,
+          requiereConfiguracionTotp: res.requiereConfiguracionTotp,
+          totpSecreto: res.totpSecreto,
+          totpOtpAuthUri: res.totpOtpAuthUri,
+          totpQrBase64: res.totpQrBase64,
         ));
         return;
       }
 
       emit(AuthAuthenticated(correo: res.correo));
+    } on UnauthorizedException catch (e) {
+      emit(AuthError(mensaje: e.message));
     } on ServerException catch (e) {
       emit(AuthError(mensaje: e.message));
     } on NetworkTimeoutException catch (e) {
@@ -128,6 +136,87 @@ class AuthCubit extends Cubit<AuthState> {
         correoEnProceso: correo,
       ));
     }
+  }
+
+  Future<void> registrarCliente(RegistroClienteParams params) async {
+    if (state is AuthLoading) return;
+    emit(const AuthLoading('Creando cuenta...'));
+
+    try {
+      final res = await authRepository.registrarCliente(params);
+      emit(AuthRegistroExitoso(res));
+    } on ServerException catch (e) {
+      emit(AuthError(mensaje: e.message));
+    } on NetworkTimeoutException catch (e) {
+      emit(AuthError(mensaje: e.message));
+    } on NetworkConnectionException catch (e) {
+      emit(AuthError(mensaje: e.message));
+    } catch (_) {
+      emit(const AuthError(mensaje: 'Error inesperado al crear la cuenta.'));
+    }
+  }
+
+  Future<List<CatalogoPostalItem>> obtenerUbicacionesPorEstado(String estado) async {
+    try {
+      return await authRepository.obtenerUbicacionesPorEstado(estado);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<CatalogoPostalItem>> buscarPorCodigoPostal(String codigoPostal) async {
+    try {
+      return await authRepository.buscarPorCodigoPostal(codigoPostal);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<String>> obtenerOcupaciones() async {
+    try {
+      return await authRepository.obtenerOcupaciones();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<String>> obtenerColoniasPorCp(String codigoPostal) async {
+    try {
+      return await authRepository.obtenerColoniasPorCp(codigoPostal);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<bool> obtenerEstadoTotp() => authRepository.obtenerEstadoTotp();
+
+  Future<TotpConfigResult> configurarTotp() => authRepository.configurarTotp();
+
+  Future<bool> activarTotp(String codigo) => authRepository.activarTotp(codigo);
+
+  Future<bool> desactivarTotp(String password) =>
+      authRepository.desactivarTotp(password);
+
+  Future<DisponibilidadRegistroResult> verificarDisponibilidad({
+    String? curp,
+    String? rfc,
+    String? correo,
+    String? telefonoMovil,
+  }) {
+    return authRepository.verificarDisponibilidad(
+      curp: curp,
+      rfc: rfc,
+      correo: correo,
+      telefonoMovil: telefonoMovil,
+    );
+  }
+
+  Future<int> enviarCodigoVerificacionCorreo(String correo) {
+    return authRepository.enviarCodigoVerificacionCorreo(correo);
+  }
+
+  Future<bool> confirmarCodigoVerificacionCorreo(String correo, String codigo) {
+    return authRepository.confirmarCodigoVerificacionCorreo(correo, codigo);
   }
 
   Future<void> cerrarSesion([String? motivo]) async {
