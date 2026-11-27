@@ -5,7 +5,12 @@ import com.proyecto.servicios.dto.response.PaginaResponse;
 import com.proyecto.servicios.dto.response.banco.CuentaResponse;
 import com.proyecto.servicios.dto.response.banco.SaldoResponse;
 
+import java.util.List;
+
 public interface CuentaService {
+
+    /** Consulta las cuentas bancarias del usuario autenticado. */
+    List<CuentaResponse> obtenerMisCuentas(String correoAutenticado);
 
     /** Consulta una cuenta por su número único. */
     CuentaResponse consultarPorNumeroCuenta(NumeroCuentaRequest request);

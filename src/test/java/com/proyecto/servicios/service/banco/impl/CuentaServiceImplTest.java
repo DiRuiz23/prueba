@@ -6,12 +6,14 @@ import com.proyecto.servicios.dto.response.banco.CuentaResponse;
 import com.proyecto.servicios.dto.response.banco.SaldoResponse;
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Cuenta;
+import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.enums.EstatusCuenta;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.banco.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.banco.CuentaNoEncontradaException;
 import com.proyecto.servicios.repository.banco.ClienteRepository;
 import com.proyecto.servicios.repository.banco.CuentaRepository;
+import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +44,9 @@ class CuentaServiceImplTest {
 
     @Mock
     private ClienteRepository clienteRepository;
+
+    @Mock
+    private UsuarioRepository usuarioRepository;
 
     @InjectMocks
     private CuentaServiceImpl cuentaService;
@@ -304,6 +309,23 @@ class CuentaServiceImplTest {
         request.setNumeroCuenta(NUMERO_CUENTA);
 
         assertThrows(CuentaNoEncontradaException.class, () -> cuentaService.consultarSaldo(request));
+    }
+
+    @Test
+    @DisplayName("obtenerMisCuentas: retorna cuentas del usuario autenticado")
+    void obtenerMisCuentas_exitoso() {
+        Cliente cl = cliente(1L, true);
+        Usuario u = Usuario.builder().id(5L).correo("cliente@banco.com").cliente(cl).activo(true).build();
+        Cuenta c = cuenta(10L, cl, NUMERO_CUENTA, new BigDecimal("1000.00"), EstatusCuenta.ACTIVA);
+
+        when(usuarioRepository.findByCorreo("cliente@banco.com")).thenReturn(Optional.of(u));
+        when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(c));
+
+        List<CuentaResponse> res = cuentaService.obtenerMisCuentas("  CLIENTE@banco.com ");
+
+        assertEquals(1, res.size());
+        assertEquals(NUMERO_CUENTA, res.get(0).getNumeroCuenta());
+        assertEquals(new BigDecimal("1000.00"), res.get(0).getSaldo());
     }
 }
 

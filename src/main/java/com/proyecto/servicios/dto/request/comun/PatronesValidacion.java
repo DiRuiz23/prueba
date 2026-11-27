@@ -9,17 +9,23 @@ public final class PatronesValidacion {
     /** Letras (incluye acentos y ñ) y espacios, entre 2 y 50 caracteres. */
     public static final String NOMBRE = "^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\\s]{2,50}$";
 
-    /** CURP oficial de 18 caracteres. */
-    public static final String CURP = "^[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[0-9A-Z]{2}$";
+    /** CURP de 18 caracteres (4 letras + 6 dígitos + H/M + 5 letras + 2 homoclave). */
+    public static final String CURP = "^(?i)[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[A-Z0-9]{2}$";
 
-    /** RFC de persona física o moral (12 o 13 caracteres). */
-    public static final String RFC = "^[A-Z&Ñ]{3,4}[0-9]{6}[A-V1-9][A-Z1-9][0-9A-Z]$";
+    /** RFC de persona física o moral (3-4 letras + 6 dígitos + 3 homoclave). */
+    public static final String RFC = "^(?i)[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$";
 
     /** Teléfono nacional de 10 dígitos. */
     public static final String TELEFONO = "^[0-9]{10}$";
 
     /** Código postal mexicano de 5 dígitos. */
     public static final String CODIGO_POSTAL = "^[0-9]{5}$";
+
+    /** Número exterior/interior de domicilio: letras, números, guion o diagonal (1 a 6 caracteres). */
+    public static final String NUMERO_DOMICILIO = "^[A-Za-z0-9/\\-]{1,6}$";
+
+    /** Número interior opcional de domicilio (vacío o 1 a 6 caracteres alfanuméricos/guion/diagonal). */
+    public static final String NUMERO_DOMICILIO_OPCIONAL = "^$|^[A-Za-z0-9/\\-]{1,6}$";
 
     /** Número de cuenta generado por el sistema: prefijo bancario de 3 dígitos + 10 dígitos. */
     public static final String NUMERO_CUENTA = "^[0-9]{13}$";

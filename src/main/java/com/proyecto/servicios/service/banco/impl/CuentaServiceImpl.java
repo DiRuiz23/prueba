@@ -6,12 +6,15 @@ import com.proyecto.servicios.dto.response.banco.CuentaResponse;
 import com.proyecto.servicios.dto.response.banco.SaldoResponse;
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Cuenta;
+import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.enums.EstatusCuenta;
 import com.proyecto.servicios.exception.banco.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.banco.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.banco.UsuarioNoEncontradoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.repository.banco.ClienteRepository;
 import com.proyecto.servicios.repository.banco.CuentaRepository;
+import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import com.proyecto.servicios.repository.specification.CuentaSpecification;
 import com.proyecto.servicios.service.banco.CuentaService;
 import com.proyecto.servicios.util.PaginacionUtils;
@@ -25,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -36,10 +40,29 @@ public class CuentaServiceImpl implements CuentaService {
 
     private final CuentaRepository cuentaRepository;
     private final ClienteRepository clienteRepository;
+    private final UsuarioRepository usuarioRepository;
 
     // ─────────────────────────────────────────────────────────────────────────
     // CONSULTAS
     // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CuentaResponse> obtenerMisCuentas(String correoAutenticado) {
+        if (correoAutenticado == null || correoAutenticado.isBlank()) {
+            return List.of();
+        }
+        String norm = correoAutenticado.trim().toLowerCase();
+        Usuario usuario = usuarioRepository.findByCorreo(norm)
+                .or(() -> usuarioRepository.findByCorreoIgnoreCase(norm))
+                .orElseThrow(() -> new UsuarioNoEncontradoException("No se encontró el usuario autenticado."));
+        if (usuario.getCliente() == null) {
+            return List.of();
+        }
+        return cuentaRepository.findByClienteId(usuario.getCliente().getId()).stream()
+                .map(CuentaResponse::desdeEntidad)
+                .toList();
+    }
 
     @Override
     @Transactional(readOnly = true)

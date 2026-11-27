@@ -73,7 +73,6 @@ public class RegistroClienteRequest {
     @Size(max = 100, message = "La ocupación no debe exceder los 100 caracteres")
     private String ocupacion;
 
-    @NotBlank(message = "La empresa es obligatoria")
     @Size(max = 100, message = "La empresa no debe exceder los 100 caracteres")
     private String empresa;
 

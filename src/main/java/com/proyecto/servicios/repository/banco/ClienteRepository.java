@@ -7,6 +7,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Repository;
 
@@ -18,6 +20,33 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long>, JpaSpec
     boolean existsByRfc(String rfc);
 
     boolean existsByCorreo(String correo);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
+            FROM Cliente c
+            WHERE c.telefonoMovil = :telefono
+              AND c.activo = true
+              AND EXISTS (
+                  SELECT cta FROM Cuenta cta
+                  WHERE cta.cliente = c
+                    AND cta.estatus <> com.proyecto.servicios.enums.EstatusCuenta.INACTIVA
+              )
+            """)
+    boolean existsTelefonoActivo(@Param("telefono") String telefono);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
+            FROM Cliente c
+            WHERE c.telefonoMovil = :telefono
+              AND c.id <> :clienteId
+              AND c.activo = true
+              AND EXISTS (
+                  SELECT cta FROM Cuenta cta
+                  WHERE cta.cliente = c
+                    AND cta.estatus <> com.proyecto.servicios.enums.EstatusCuenta.INACTIVA
+              )
+            """)
+    boolean existsTelefonoActivoEnOtroCliente(@Param("telefono") String telefono, @Param("clienteId") Long clienteId);
 
     /**
      * Búsqueda dinámica paginada. El domicilio (relación a uno) se obtiene en la misma consulta;

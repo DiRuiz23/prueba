@@ -3,6 +3,7 @@ package com.proyecto.servicios.service.banco.impl;
 import com.proyecto.servicios.dto.request.banco.*;
 import com.proyecto.servicios.dto.response.PaginaResponse;
 import com.proyecto.servicios.dto.response.banco.ClienteResponse;
+import com.proyecto.servicios.dto.response.banco.DisponibilidadRegistroResponse;
 import com.proyecto.servicios.entity.banco.*;
 import com.proyecto.servicios.entity.catalogos.*;
 import com.proyecto.servicios.enums.EstadoCivil;
@@ -14,6 +15,7 @@ import com.proyecto.servicios.repository.catalogos.*;
 import com.proyecto.servicios.repository.specification.ClienteSpecification;
 import com.proyecto.servicios.service.banco.BiometriaService;
 import com.proyecto.servicios.service.banco.ClienteService;
+import com.proyecto.servicios.service.banco.PostaliaCodigoPostalService;
 import com.proyecto.servicios.util.PaginacionUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +50,7 @@ public class ClienteServiceImpl implements ClienteService {
     private final PaisRepository paisRepository;
     private final EstadoCatalogoRepository estadoCatalogoRepository;
     private final CodigoPostalCatalogoRepository codigoPostalCatalogoRepository;
+    private final PostaliaCodigoPostalService postaliaCodigoPostalService;
 
     @Value("${banco.onboarding.cuenta.saldo-inicial-default:1000.00}")
     private BigDecimal saldoInicialDefault;
@@ -63,8 +66,20 @@ public class ClienteServiceImpl implements ClienteService {
 
         // 1. Validaciones de negocio
         validarMayoriaEdad(request.getFechaNacimiento());
-        validarUnicidad(request.getCurp(), request.getRfc(), request.getCorreo());
+        validarUnicidad(request.getCurp(), request.getRfc(), request.getCorreo(), request.getTelefonoMovil());
         validarCatalogosYEstadoCivil(request.getEstadoCivil(), request.getDomicilio());
+
+        String ocupacionNorm = request.getOcupacion().trim();
+        boolean esEstudiante = "Estudiante".equalsIgnoreCase(ocupacionNorm);
+        String empresaNorm = (request.getEmpresa() != null && !request.getEmpresa().isBlank())
+                ? request.getEmpresa().trim()
+                : null;
+        if (!esEstudiante && empresaNorm == null) {
+            throw new ReglaNegocioException("La empresa es obligatoria para la ocupación seleccionada.");
+        }
+        if (esEstudiante) {
+            empresaNorm = null;
+        }
 
         // 2. Construir y persistir Cliente
         Cliente cliente = Cliente.builder()
@@ -81,8 +96,8 @@ public class ClienteServiceImpl implements ClienteService {
                 .correo(request.getCorreo().trim().toLowerCase())
                 .telefonoMovil(request.getTelefonoMovil().trim())
                 .telefonoAlternativo(request.getTelefonoAlternativo() != null ? request.getTelefonoAlternativo().trim() : null)
-                .ocupacion(request.getOcupacion().trim())
-                .empresa(request.getEmpresa().trim())
+                .ocupacion(ocupacionNorm)
+                .empresa(empresaNorm)
                 .ingresoMensual(request.getIngresoMensual())
                 .activo(true)
                 .build();
@@ -130,6 +145,30 @@ public class ClienteServiceImpl implements ClienteService {
         log.info("Onboarding completado exitosamente para el cliente ID: {}", cliente.getId());
 
         return ClienteResponse.desdeEntidad(cliente, List.of(cuenta));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DisponibilidadRegistroResponse verificarDisponibilidad(String curp, String rfc, String correo) {
+        return verificarDisponibilidad(curp, rfc, correo, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DisponibilidadRegistroResponse verificarDisponibilidad(String curp, String rfc, String correo, String telefonoMovil) {
+        boolean curpDisponible = curp == null || curp.isBlank()
+                || !clienteRepository.existsByCurp(curp.trim().toUpperCase());
+        boolean rfcDisponible = rfc == null || rfc.isBlank()
+                || !clienteRepository.existsByRfc(rfc.trim().toUpperCase());
+        boolean correoDisponible = true;
+        if (correo != null && !correo.isBlank()) {
+            String correoNorm = correo.trim().toLowerCase();
+            correoDisponible = !clienteRepository.existsByCorreo(correoNorm)
+                    && !usuarioRepository.existsByCorreo(correoNorm);
+        }
+        boolean telefonoDisponible = telefonoMovil == null || telefonoMovil.isBlank()
+                || !clienteRepository.existsTelefonoActivo(telefonoMovil.trim());
+        return new DisponibilidadRegistroResponse(curpDisponible, rfcDisponible, correoDisponible, telefonoDisponible);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -200,7 +239,15 @@ public class ClienteServiceImpl implements ClienteService {
         if (patch.getApellidoMaterno() != null) cliente.setApellidoMaterno(patch.getApellidoMaterno().trim());
         if (patch.getSexo() != null) cliente.setSexo(patch.getSexo());
         if (patch.getNacionalidad() != null) cliente.setNacionalidad(patch.getNacionalidad());
-        if (patch.getTelefonoMovil() != null) cliente.setTelefonoMovil(patch.getTelefonoMovil().trim());
+        if (patch.getTelefonoMovil() != null) {
+            String telNuevo = patch.getTelefonoMovil().trim();
+            if (!telNuevo.equals(cliente.getTelefonoMovil())
+                    && clienteRepository.existsTelefonoActivoEnOtroCliente(telNuevo, cliente.getId())) {
+                throw new TelefonoDuplicadoException(
+                        "El teléfono '" + telNuevo + "' ya está registrado en una cuenta activa.");
+            }
+            cliente.setTelefonoMovil(telNuevo);
+        }
         if (patch.getTelefonoAlternativo() != null) cliente.setTelefonoAlternativo(patch.getTelefonoAlternativo().trim());
         if (patch.getOcupacion() != null) cliente.setOcupacion(patch.getOcupacion().trim());
         if (patch.getEmpresa() != null) cliente.setEmpresa(patch.getEmpresa().trim());
@@ -285,7 +332,7 @@ public class ClienteServiceImpl implements ClienteService {
         }
     }
 
-    private void validarUnicidad(String curp, String rfc, String correo) {
+    private void validarUnicidad(String curp, String rfc, String correo, String telefonoMovil) {
         if (clienteRepository.existsByCurp(curp)) {
             throw new CurpDuplicadaException("La CURP '" + curp + "' ya se encuentra registrada en el sistema.");
         }
@@ -294,6 +341,11 @@ public class ClienteServiceImpl implements ClienteService {
         }
         if (clienteRepository.existsByCorreo(correo)) {
             throw new CorreoElectronicoDuplicadoException("El correo '" + correo + "' ya se encuentra registrado en el sistema.");
+        }
+        if (telefonoMovil != null && !telefonoMovil.isBlank()
+                && clienteRepository.existsTelefonoActivo(telefonoMovil.trim())) {
+            throw new TelefonoDuplicadoException(
+                    "El teléfono '" + telefonoMovil.trim() + "' ya está registrado en una cuenta activa.");
         }
     }
 
@@ -321,13 +373,29 @@ public class ClienteServiceImpl implements ClienteService {
                     .findFirst()
                     .orElseThrow(() -> new ReglaNegocioException("El país proporcionado no se encuentra en el catálogo."));
 
+            String estadoNormalizado = PostaliaCodigoPostalService.normalizarEstado(dDTO.getEstado());
+            String estadoComparar = PostaliaCodigoPostalService.normalizarTextoComparacion(estadoNormalizado);
             EstadoCatalogo estado = estadoCatalogoRepository.findByPaisId(pais.getId()).stream()
-                    .filter(e -> e.getNombre().equalsIgnoreCase(dDTO.getEstado()))
+                    .filter(e -> e.getNombre().equalsIgnoreCase(dDTO.getEstado())
+                            || PostaliaCodigoPostalService.normalizarTextoComparacion(e.getNombre()).equals(estadoComparar))
                     .findFirst()
                     .orElseThrow(() -> new ReglaNegocioException("El estado proporcionado no se encuentra en el catálogo para el país indicado."));
 
+            String cpLimpio = dDTO.getCodigoPostal() == null ? "" : dDTO.getCodigoPostal().trim();
+            String municipioComparar = PostaliaCodigoPostalService.normalizarTextoComparacion(dDTO.getMunicipio());
             boolean cpValido = codigoPostalCatalogoRepository.findByEstadoId(estado.getId()).stream()
-                    .anyMatch(cp -> cp.getCodigo().equals(dDTO.getCodigoPostal()) && cp.getMunicipio().equalsIgnoreCase(dDTO.getMunicipio()));
+                    .anyMatch(cp -> cp.getCodigo().equals(cpLimpio)
+                            && PostaliaCodigoPostalService.normalizarTextoComparacion(cp.getMunicipio()).equals(municipioComparar));
+
+            if (!cpValido && postaliaCodigoPostalService != null) {
+                cpValido = postaliaCodigoPostalService.consultarCodigoPostal(cpLimpio)
+                        .map(p -> PostaliaCodigoPostalService.normalizarTextoComparacion(p.estado())
+                                .equals(PostaliaCodigoPostalService.normalizarTextoComparacion(estado.getNombre()))
+                                && PostaliaCodigoPostalService.normalizarTextoComparacion(p.municipio())
+                                .equals(municipioComparar))
+                        .orElse(false);
+            }
+
             if (!cpValido) {
                 throw new ReglaNegocioException("El código postal o municipio proporcionado no coincide con los registros del catálogo para el estado indicado.");
             }

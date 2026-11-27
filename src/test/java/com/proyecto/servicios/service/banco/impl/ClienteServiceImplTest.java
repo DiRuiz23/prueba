@@ -3,6 +3,7 @@ package com.proyecto.servicios.service.banco.impl;
 import com.proyecto.servicios.dto.request.banco.*;
 import com.proyecto.servicios.dto.response.PaginaResponse;
 import com.proyecto.servicios.dto.response.banco.ClienteResponse;
+import com.proyecto.servicios.dto.response.banco.DisponibilidadRegistroResponse;
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Cuenta;
 import com.proyecto.servicios.entity.banco.Domicilio;
@@ -20,6 +21,7 @@ import com.proyecto.servicios.repository.catalogos.CodigoPostalCatalogoRepositor
 import com.proyecto.servicios.repository.catalogos.EstadoCatalogoRepository;
 import com.proyecto.servicios.repository.catalogos.PaisRepository;
 import com.proyecto.servicios.service.banco.BiometriaService;
+import com.proyecto.servicios.service.banco.PostaliaCodigoPostalService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,6 +66,8 @@ class ClienteServiceImplTest {
     private EstadoCatalogoRepository estadoCatalogoRepository;
     @Mock
     private CodigoPostalCatalogoRepository codigoPostalCatalogoRepository;
+    @Mock
+    private PostaliaCodigoPostalService postaliaCodigoPostalService;
 
     @InjectMocks
     private ClienteServiceImpl clienteService;
@@ -289,10 +293,98 @@ class ClienteServiceImplTest {
         when(paisRepository.findAll()).thenReturn(List.of(pais));
         when(estadoCatalogoRepository.findByPaisId(1)).thenReturn(List.of(estado));
         when(codigoPostalCatalogoRepository.findByEstadoId(10)).thenReturn(List.of());
+        when(postaliaCodigoPostalService.consultarCodigoPostal("06600")).thenReturn(Optional.empty());
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
                 () -> clienteService.registrarCliente(request));
         assertTrue(ex.getMessage().contains("código postal o municipio proporcionado no coincide"));
+    }
+
+    @Test
+    @DisplayName("registrarCliente: CP ausente en BD local pero validado por Postalia registra exitosamente")
+    void registrarCliente_cpValidadoPorPostalia_exitoso() {
+        RegistroClienteRequest request = crearRegistroValido();
+        request.getDomicilio().setEstado("Morelos");
+        request.getDomicilio().setMunicipio("Jiutepec");
+        request.getDomicilio().setCodigoPostal("62550");
+
+        Pais pais = new Pais();
+        pais.setId(1);
+        pais.setNombre("México");
+
+        EstadoCatalogo estado = new EstadoCatalogo();
+        estado.setId(17);
+        estado.setNombre("Morelos");
+        estado.setPais(pais);
+
+        when(paisRepository.findAll()).thenReturn(List.of(pais));
+        when(estadoCatalogoRepository.findByPaisId(1)).thenReturn(List.of(estado));
+        when(codigoPostalCatalogoRepository.findByEstadoId(17)).thenReturn(List.of());
+        when(postaliaCodigoPostalService.consultarCodigoPostal("62550")).thenReturn(Optional.of(
+                new PostaliaCodigoPostalService.CodigoPostalPostalia(
+                        "62550", "Morelos", "Jiutepec", "Jiutepec", "Urbano", List.of("Centro Jiutepec"))
+        ));
+        when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
+        when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
+        when(clienteRepository.existsByCorreo(anyString())).thenReturn(false);
+        when(clienteRepository.existsTelefonoActivo(anyString())).thenReturn(false);
+        when(clienteRepository.save(any(Cliente.class))).thenAnswer(inv -> {
+            Cliente c = inv.getArgument(0);
+            c.setId(5L);
+            return c;
+        });
+        when(cuentaRepository.existsByNumeroCuenta(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
+
+        ClienteResponse response = clienteService.registrarCliente(request);
+
+        assertNotNull(response);
+        assertEquals(5L, response.getId());
+        verify(postaliaCodigoPostalService).consultarCodigoPostal("62550");
+        verify(clienteRepository).save(any(Cliente.class));
+    }
+
+    @Test
+    @DisplayName("registrarCliente: Estudiante permite empresa nula y guarda empresa como null")
+    void registrarCliente_estudianteSinEmpresa_exitoso() {
+        RegistroClienteRequest request = crearRegistroValido();
+        request.setOcupacion("Estudiante");
+        request.setEmpresa("   ");
+        mockCatalogosValidos();
+
+        when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
+        when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
+        when(clienteRepository.existsByCorreo(anyString())).thenReturn(false);
+        when(clienteRepository.save(any(Cliente.class))).thenAnswer(inv -> {
+            Cliente c = inv.getArgument(0);
+            c.setId(2L);
+            return c;
+        });
+        when(cuentaRepository.existsByNumeroCuenta(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
+
+        ClienteResponse response = clienteService.registrarCliente(request);
+
+        assertNotNull(response);
+        assertEquals("Estudiante", response.getOcupacion());
+        assertNull(response.getEmpresa());
+    }
+
+    @Test
+    @DisplayName("registrarCliente: ocupación distinta a Estudiante sin empresa lanza ReglaNegocioException")
+    void registrarCliente_noEstudianteSinEmpresa_falla() {
+        RegistroClienteRequest request = crearRegistroValido();
+        request.setOcupacion("Ingeniero");
+        request.setEmpresa(null);
+        mockCatalogosValidos();
+
+        when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
+        when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
+        when(clienteRepository.existsByCorreo(anyString())).thenReturn(false);
+
+        ReglaNegocioException ex = assertThrows(ReglaNegocioException.class,
+                () -> clienteService.registrarCliente(request));
+        assertTrue(ex.getMessage().contains("empresa es obligatoria"));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -470,6 +562,48 @@ class ClienteServiceImplTest {
         req.setId(99L);
 
         assertThrows(ClienteNoEncontradoException.class, () -> clienteService.bajaLogicaCliente(req));
+    }
+
+    @Test
+    @DisplayName("verificarDisponibilidad: reporta campos disponibles y duplicados normalizados")
+    void verificarDisponibilidad_detectaDuplicados() {
+        when(clienteRepository.existsByCurp("HELC950520HDFRRN01")).thenReturn(true);
+        when(clienteRepository.existsByRfc("HELC950520ABC")).thenReturn(false);
+        when(clienteRepository.existsByCorreo("nuevo@test.com")).thenReturn(false);
+        when(usuarioRepository.existsByCorreo("nuevo@test.com")).thenReturn(true);
+
+        DisponibilidadRegistroResponse res = clienteService.verificarDisponibilidad(
+                "helc950520hdfrrn01", "helc950520abc", "NUEVO@test.com");
+
+        assertFalse(res.isCurpDisponible());
+        assertTrue(res.isRfcDisponible());
+        assertFalse(res.isCorreoDisponible());
+    }
+
+    @Test
+    @DisplayName("registrarCliente: teléfono duplicado en cuenta activa lanza TelefonoDuplicadoException")
+    void registrarCliente_telefonoDuplicadoEnCuentaActiva_lanzaExcepcion() {
+        RegistroClienteRequest req = crearRegistroValido();
+        when(clienteRepository.existsByCurp(any())).thenReturn(false);
+        when(clienteRepository.existsByRfc(any())).thenReturn(false);
+        when(clienteRepository.existsByCorreo(any())).thenReturn(false);
+        when(clienteRepository.existsTelefonoActivo(req.getTelefonoMovil())).thenReturn(true);
+
+        assertThrows(TelefonoDuplicadoException.class, () -> clienteService.registrarCliente(req));
+        verify(clienteRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("verificarDisponibilidad: evalúa disponibilidad de teléfono considerando solo cuentas activas")
+    void verificarDisponibilidad_incluyeTelefono() {
+        when(clienteRepository.existsTelefonoActivo("5512345678")).thenReturn(true);
+        when(clienteRepository.existsTelefonoActivo("5599999999")).thenReturn(false);
+
+        DisponibilidadRegistroResponse ocupado = clienteService.verificarDisponibilidad(null, null, null, "5512345678");
+        DisponibilidadRegistroResponse libre = clienteService.verificarDisponibilidad(null, null, null, "5599999999");
+
+        assertFalse(ocupado.isTelefonoDisponible());
+        assertTrue(libre.isTelefonoDisponible());
     }
 }
 

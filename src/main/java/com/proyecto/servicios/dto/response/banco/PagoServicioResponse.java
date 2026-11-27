@@ -19,7 +19,7 @@ public class PagoServicioResponse {
     @Schema(description = "Identificador interno de la transacción", example = "1")
     private Long idTransaccion;
 
-    @Schema(description = "Código único de transacción (UPC / Folio interno)", example = "GP000000000001")
+    @Schema(description = "Código único de transacción (UPC / Folio interno de 10 dígitos)", example = "1234567890")
     private String upc;
 
     @Schema(description = "Identificador de transacción otorgado por GestoPago", example = "291437188")

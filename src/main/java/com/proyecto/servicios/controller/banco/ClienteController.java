@@ -4,7 +4,9 @@ import com.proyecto.servicios.dto.request.banco.*;
 import com.proyecto.servicios.dto.response.GenericResponse;
 import com.proyecto.servicios.dto.response.PaginaResponse;
 import com.proyecto.servicios.dto.response.banco.ClienteResponse;
+import com.proyecto.servicios.dto.response.banco.DisponibilidadRegistroResponse;
 import com.proyecto.servicios.service.banco.ClienteService;
+import com.proyecto.servicios.service.banco.VerificacionCorreoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -13,6 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/clientes")
 @RequiredArgsConstructor
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class ClienteController {
 
     private final ClienteService clienteService;
+    private final VerificacionCorreoService verificacionCorreoService;
 
     @PostMapping
     @Operation(summary = "Registrar un nuevo cliente con cuenta bancaria, usuario de acceso y biometría opcional")
@@ -28,6 +33,37 @@ public class ClienteController {
         ClienteResponse respuesta = clienteService.registrarCliente(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GenericResponse.exito("Cliente registrado exitosamente", respuesta));
+    }
+
+    @GetMapping("/disponibilidad")
+    @Operation(summary = "Verificar disponibilidad de CURP, RFC, correo electrónico y teléfono móvil antes de avanzar en el registro")
+    public ResponseEntity<GenericResponse<DisponibilidadRegistroResponse>> verificarDisponibilidad(
+            @RequestParam(required = false) String curp,
+            @RequestParam(required = false) String rfc,
+            @RequestParam(required = false) String correo,
+            @RequestParam(required = false) String telefonoMovil) {
+        DisponibilidadRegistroResponse respuesta = clienteService.verificarDisponibilidad(curp, rfc, correo, telefonoMovil);
+        return ResponseEntity.ok(GenericResponse.exito("Disponibilidad verificada correctamente", respuesta));
+    }
+
+    @PostMapping("/verificar-correo/enviar")
+    @Operation(summary = "Enviar código de 6 dígitos para comprobar existencia del correo antes de crear la cuenta")
+    public ResponseEntity<GenericResponse<Map<String, Object>>> enviarCodigoCorreo(
+            @RequestBody Map<String, String> payload) {
+        int segundos = verificacionCorreoService.enviarCodigoVerificacion(payload.get("correo"));
+        return ResponseEntity.ok(GenericResponse.exito(
+                "Código de verificación enviado a tu correo",
+                Map.of("segundosExpiracion", segundos)
+        ));
+    }
+
+    @PostMapping("/verificar-correo/confirmar")
+    @Operation(summary = "Confirmar código de verificación del correo previo al registro")
+    public ResponseEntity<GenericResponse<Boolean>> confirmarCodigoCorreo(
+            @RequestBody Map<String, String> payload) {
+        boolean confirmado = verificacionCorreoService.confirmarCodigoVerificacion(
+                payload.get("correo"), payload.get("codigo"));
+        return ResponseEntity.ok(GenericResponse.exito("Correo verificado correctamente", confirmado));
     }
 
     @PostMapping("/consultar")

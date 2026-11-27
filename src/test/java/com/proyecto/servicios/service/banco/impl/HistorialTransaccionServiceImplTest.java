@@ -77,7 +77,7 @@ class HistorialTransaccionServiceImplTest {
         Page<TransaccionServicio> pagina = new PageImpl<>(List.of(tx), pageable, 1);
 
         when(usuarioRepository.findByCorreo("juan@banco.com")).thenReturn(Optional.of(usuario));
-        when(transaccionRepository.findByCuentaClienteIdAndEstatus(100L, EstatusTransaccionServicio.EXITOSA, pageable))
+        when(transaccionRepository.findByCuentaClienteIdAndEstatusIn(eq(100L), anyList(), eq(pageable)))
                 .thenReturn(pagina);
 
         Page<PagoServicioResponse> resultado = historialService.obtenerHistorialExitoso("juan@banco.com", pageable);
@@ -93,6 +93,43 @@ class HistorialTransaccionServiceImplTest {
     }
 
     @Test
+    @DisplayName("obtenerHistorialExitoso: incluye transacciones FALLIDA como RECHAZADA con UPC y motivo")
+    void obtenerHistorial_incluyeRechazadasConUpc() {
+        Pageable pageable = PageRequest.of(0, 5);
+
+        TransaccionServicio txFallida = TransaccionServicio.builder()
+                .id(2L)
+                .upc("GP999888777")
+                .cuenta(cuenta)
+                .monto(new BigDecimal("100.00"))
+                .montoDebitado(new BigDecimal("100.00"))
+                .saldoAnterior(new BigDecimal("1000.00"))
+                .saldoPosterior(new BigDecimal("900.00"))
+                .telefonoReferencia("5512345678")
+                .idProducto(582)
+                .idServicio(133)
+                .estatus(EstatusTransaccionServicio.FALLIDA)
+                .mensajeRespuesta("Referencia inválida en el proveedor")
+                .fechaTransaccion(OffsetDateTime.now())
+                .build();
+
+        Page<TransaccionServicio> pagina = new PageImpl<>(List.of(txFallida), pageable, 1);
+
+        when(usuarioRepository.findByCorreo("juan@banco.com")).thenReturn(Optional.of(usuario));
+        when(transaccionRepository.findByCuentaClienteIdAndEstatusIn(eq(100L), anyList(), eq(pageable)))
+                .thenReturn(pagina);
+
+        Page<PagoServicioResponse> resultado = historialService.obtenerHistorialExitoso("juan@banco.com", pageable);
+
+        assertEquals(1, resultado.getTotalElements());
+        PagoServicioResponse item = resultado.getContent().get(0);
+        assertEquals("GP999888777", item.getUpc());
+        assertEquals("RECHAZADA", item.getEstatus());
+        assertEquals("Referencia inválida en el proveedor", item.getMensaje());
+        assertEquals(new BigDecimal("1000.00"), item.getSaldoRestante());
+    }
+
+    @Test
     @DisplayName("obtenerHistorialExitoso: usuario sin cliente consulta por usuarioId")
     void obtenerHistorialExitoso_sinCliente() {
         usuario.setCliente(null);
@@ -100,14 +137,14 @@ class HistorialTransaccionServiceImplTest {
         Page<TransaccionServicio> paginaVacia = new PageImpl<>(List.of(), pageable, 0);
 
         when(usuarioRepository.findByCorreo("juan@banco.com")).thenReturn(Optional.of(usuario));
-        when(transaccionRepository.findByUsuarioIdAndEstatus(10L, EstatusTransaccionServicio.EXITOSA, pageable))
+        when(transaccionRepository.findByUsuarioIdAndEstatusIn(eq(10L), anyList(), eq(pageable)))
                 .thenReturn(paginaVacia);
 
         Page<PagoServicioResponse> resultado = historialService.obtenerHistorialExitoso("juan@banco.com", pageable);
 
         assertNotNull(resultado);
         assertEquals(0, resultado.getTotalElements());
-        verify(transaccionRepository).findByUsuarioIdAndEstatus(10L, EstatusTransaccionServicio.EXITOSA, pageable);
+        verify(transaccionRepository).findByUsuarioIdAndEstatusIn(eq(10L), anyList(), eq(pageable));
     }
 
     @Test

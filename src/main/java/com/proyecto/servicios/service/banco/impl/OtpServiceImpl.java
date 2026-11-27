@@ -7,11 +7,14 @@ import com.proyecto.servicios.exception.banco.PinBloqueadoException;
 import com.proyecto.servicios.exception.banco.PinInvalidoException;
 import com.proyecto.servicios.repository.banco.OtpTokenRepository;
 import com.proyecto.servicios.service.banco.OtpService;
+import com.proyecto.servicios.util.EmailPlantillaHelper;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.mail.SimpleMailMessage;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +39,9 @@ public class OtpServiceImpl implements OtpService {
 
     private final OtpTokenRepository otpTokenRepository;
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
+
+    @Value("${spring.mail.username:}")
+    private String mailFrom;
 
     @Override
     @Transactional
@@ -133,12 +139,24 @@ public class OtpServiceImpl implements OtpService {
             return;
         }
         try {
-            SimpleMailMessage mensaje = new SimpleMailMessage();
-            mensaje.setTo(destinatario);
-            mensaje.setSubject("Código de Seguridad 2FA - Comercio Digital");
-            mensaje.setText("Hola,\n\nTu código de verificación de seguridad para " + proposito + " es:\n\n"
-                    + codigo + "\n\nEste código es confidencial y vence en 5 minutos.\nSi no solicitaste este código, ignora este mensaje.");
-            mailSender.send(mensaje);
+            MimeMessage mime = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mime, true, StandardCharsets.UTF_8.name());
+            if (mailFrom != null && !mailFrom.isBlank()) {
+                helper.setFrom(mailFrom, "AppHasani");
+                helper.setReplyTo(mailFrom);
+            }
+            helper.setTo(destinatario);
+            helper.setSubject("Tu código de seguridad — AppHasani");
+            String subtitulo = PROPOSITO_LOGIN_2FA.equalsIgnoreCase(proposito)
+                    ? "Usa este código para autorizar tu inicio de sesión."
+                    : "Usa este código para completar tu operación (" + proposito + ").";
+            helper.setText(EmailPlantillaHelper.construirHtmlCodigo(
+                    "Código de seguridad",
+                    subtitulo,
+                    codigo,
+                    EXPIRACION_SEGUNDOS / 60
+            ), true);
+            mailSender.send(mime);
             log.info("Correo de seguridad 2FA enviado exitosamente a {}", destinatario);
         } catch (Exception e) {
             log.error("No fue posible enviar el correo de verificación a {}: {}", destinatario, e.getMessage());

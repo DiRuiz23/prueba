@@ -3,11 +3,18 @@ package com.proyecto.servicios.service.banco;
 import com.proyecto.servicios.dto.request.banco.*;
 import com.proyecto.servicios.dto.response.PaginaResponse;
 import com.proyecto.servicios.dto.response.banco.ClienteResponse;
+import com.proyecto.servicios.dto.response.banco.DisponibilidadRegistroResponse;
 
 public interface ClienteService {
 
     /** Registra un cliente nuevo con cuenta bancaria, usuario de acceso y biometría. */
     ClienteResponse registrarCliente(RegistroClienteRequest request);
+
+    /** Verifica si la CURP, el RFC y el correo están disponibles antes de finalizar el registro. */
+    DisponibilidadRegistroResponse verificarDisponibilidad(String curp, String rfc, String correo);
+
+    /** Verifica si la CURP, el RFC, el correo y el teléfono móvil están disponibles antes de finalizar el registro. */
+    DisponibilidadRegistroResponse verificarDisponibilidad(String curp, String rfc, String correo, String telefonoMovil);
 
     /** Consulta un cliente por su ID numérico. */
     ClienteResponse consultarPorId(ClienteIdRequest request);

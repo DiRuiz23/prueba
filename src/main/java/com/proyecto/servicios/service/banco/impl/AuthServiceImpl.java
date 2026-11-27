@@ -6,13 +6,15 @@ import com.proyecto.servicios.dto.request.auth.VerificarOtpRequest;
 import com.proyecto.servicios.dto.response.auth.LoginResponse;
 import com.proyecto.servicios.entity.banco.SesionActiva;
 import com.proyecto.servicios.entity.banco.Usuario;
+import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.banco.CredencialesInvalidasException;
+import com.proyecto.servicios.exception.banco.PinInvalidoException;
 import com.proyecto.servicios.exception.banco.UsuarioInactivoException;
 import com.proyecto.servicios.exception.banco.UsuarioNoEncontradoException;
 import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import com.proyecto.servicios.service.banco.AuthService;
-import com.proyecto.servicios.service.banco.OtpService;
 import com.proyecto.servicios.service.banco.SesionService;
+import com.proyecto.servicios.util.TotpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.User;
@@ -31,11 +33,11 @@ public class AuthServiceImpl implements AuthService {
 
     private static final String USUARIO_NO_ENCONTRADO_MSG = "No existe un usuario registrado con el correo: ";
     private static final String USUARIO_INACTIVO_MSG = "El usuario está inactivo. Comuníquese con soporte bancario.";
+    private static final String METODO_GOOGLE_AUTHENTICATOR = "GOOGLE_AUTHENTICATOR";
 
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final OtpService otpService;
     private final SesionService sesionService;
 
     @Override
@@ -71,15 +73,39 @@ public class AuthServiceImpl implements AuthService {
             sesionService.invalidarSesionesPrevias(usuario.getId());
         }
 
-        // 5. Iniciar Segundo Factor de Autenticación (2FA - OTP)
-        int tiempoExpiracion = otpService.generarYEnviarOtp(usuario, OtpServiceImpl.PROPOSITO_LOGIN_2FA);
+        // 5. Segundo Factor exclusivo con Google Authenticator (TOTP)
+        if (tieneTotpActivo(usuario)) {
+            log.info("Paso 1 superado. Solicitando código de Google Authenticator para: {}", correo);
+            return LoginResponse.builder()
+                    .correo(usuario.getCorreo())
+                    .requiere2fa(true)
+                    .metodo2fa(METODO_GOOGLE_AUTHENTICATOR)
+                    .requiereConfiguracionTotp(false)
+                    .mensaje("Ingresa el código de 6 dígitos de tu app Google Authenticator.")
+                    .build();
+        }
 
-        log.info("Paso 1 de autenticación superado. Requiere 2FA para: {}", correo);
+        String secreto = usuario.getTotpSecret();
+        if (secreto == null || secreto.isBlank()) {
+            secreto = TotpUtil.generarSecretoBase32();
+            usuario.setTotpSecret(secreto);
+            usuario.setTotpHabilitado(false);
+            usuarioRepository.save(usuario);
+        }
+
+        String otpAuthUri = TotpUtil.construirOtpAuthUri(usuario.getCorreo(), secreto);
+        String qrBase64 = TotpUtil.generarQrPngBase64(otpAuthUri);
+
+        log.info("Paso 1 superado. Solicitando vinculación inicial de Google Authenticator para: {}", correo);
         return LoginResponse.builder()
                 .correo(usuario.getCorreo())
                 .requiere2fa(true)
-                .tiempoExpiracionOtpSegundos(tiempoExpiracion)
-                .mensaje("Código de seguridad 2FA enviado. Ingréselo para completar su acceso.")
+                .metodo2fa(METODO_GOOGLE_AUTHENTICATOR)
+                .requiereConfiguracionTotp(true)
+                .totpSecreto(secreto)
+                .totpOtpAuthUri(otpAuthUri)
+                .totpQrBase64(qrBase64)
+                .mensaje("Vincula tu cuenta en Google Authenticator con el código QR o la clave manual e ingresa el código de 6 dígitos.")
                 .build();
     }
 
@@ -87,12 +113,22 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public LoginResponse verificarOtp(VerificarOtpRequest request) {
         String correo = request.getCorreo().trim().toLowerCase();
-        log.info("Verificando código 2FA para usuario: {}", correo);
+        log.info("Verificando código Google Authenticator para usuario: {}", correo);
 
         Usuario usuario = obtenerUsuarioActivo(correo);
 
-        // 1. Validar OTP en servidor
-        otpService.validarOtp(usuario, request.getCodigo(), OtpServiceImpl.PROPOSITO_LOGIN_2FA);
+        if (usuario.getTotpSecret() == null || usuario.getTotpSecret().isBlank()) {
+            throw new ReglaNegocioException("Debes iniciar sesión nuevamente para configurar Google Authenticator.");
+        }
+
+        if (!TotpUtil.verificarCodigo(usuario.getTotpSecret(), request.getCodigo())) {
+            throw new PinInvalidoException("Código de Google Authenticator incorrecto. Verifica e intenta de nuevo.");
+        }
+
+        if (!Boolean.TRUE.equals(usuario.getTotpHabilitado())) {
+            usuario.setTotpHabilitado(true);
+            usuarioRepository.save(usuario);
+        }
 
         // 2. Generar identificador de sesión único (JTI)
         String jti = UUID.randomUUID().toString();
@@ -123,6 +159,12 @@ public class AuthServiceImpl implements AuthService {
             throw new UsuarioInactivoException(USUARIO_INACTIVO_MSG);
         }
         return usuario;
+    }
+
+    private boolean tieneTotpActivo(Usuario usuario) {
+        return Boolean.TRUE.equals(usuario.getTotpHabilitado())
+                && usuario.getTotpSecret() != null
+                && !usuario.getTotpSecret().isBlank();
     }
 
     @Override

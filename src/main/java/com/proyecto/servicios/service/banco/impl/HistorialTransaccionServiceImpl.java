@@ -15,10 +15,20 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class HistorialTransaccionServiceImpl implements HistorialTransaccionService {
+
+    private static final List<EstatusTransaccionServicio> ESTATUS_HISTORIAL = List.of(
+            EstatusTransaccionServicio.EXITOSA,
+            EstatusTransaccionServicio.FALLIDA,
+            EstatusTransaccionServicio.REVERSADA,
+            EstatusTransaccionServicio.EN_CONCILIACION
+    );
 
     private final TransaccionServicioRepository transaccionRepository;
     private final UsuarioRepository usuarioRepository;
@@ -26,22 +36,24 @@ public class HistorialTransaccionServiceImpl implements HistorialTransaccionServ
     @Override
     @Transactional(readOnly = true)
     public Page<PagoServicioResponse> obtenerHistorialExitoso(String correoAutenticado, Pageable pageable) {
-        log.info("Consultando historial de compras exitosas para: {}", correoAutenticado);
+        log.info("Consultando historial de transacciones para: {}", correoAutenticado);
 
+        String correoNorm = correoAutenticado != null ? correoAutenticado.trim().toLowerCase() : "";
         Usuario usuario = usuarioRepository.findByCorreo(correoAutenticado)
+                .or(() -> usuarioRepository.findByCorreoIgnoreCase(correoNorm))
                 .orElseThrow(() -> new NoAutenticadoException("No fue posible verificar la identidad del usuario"));
 
         Page<TransaccionServicio> paginaTx;
         if (usuario.getCliente() != null) {
-            paginaTx = transaccionRepository.findByCuentaClienteIdAndEstatus(
+            paginaTx = transaccionRepository.findByCuentaClienteIdAndEstatusIn(
                     usuario.getCliente().getId(),
-                    EstatusTransaccionServicio.EXITOSA,
+                    ESTATUS_HISTORIAL,
                     pageable
             );
         } else {
-            paginaTx = transaccionRepository.findByUsuarioIdAndEstatus(
+            paginaTx = transaccionRepository.findByUsuarioIdAndEstatusIn(
                     usuario.getId(),
-                    EstatusTransaccionServicio.EXITOSA,
+                    ESTATUS_HISTORIAL,
                     pageable
             );
         }
@@ -50,21 +62,53 @@ public class HistorialTransaccionServiceImpl implements HistorialTransaccionServ
     }
 
     private PagoServicioResponse mapearAResponse(TransaccionServicio tx) {
+        EstatusTransaccionServicio est = tx.getEstatus();
+        String estatusDto;
+        if (est == EstatusTransaccionServicio.FALLIDA) {
+            estatusDto = "RECHAZADA";
+        } else if (est == EstatusTransaccionServicio.EN_CONCILIACION) {
+            estatusDto = "EN_PROCESO";
+        } else if (est != null) {
+            estatusDto = est.name();
+        } else {
+            estatusDto = "EXITOSA";
+        }
+
+        boolean esRechazo = est == EstatusTransaccionServicio.FALLIDA
+                || est == EstatusTransaccionServicio.REVERSADA;
+        BigDecimal saldoRestante = (esRechazo && tx.getSaldoAnterior() != null)
+                ? tx.getSaldoAnterior()
+                : tx.getSaldoPosterior();
+        String mensaje = tx.getMensajeRespuesta() != null
+                ? tx.getMensajeRespuesta()
+                : (esRechazo ? "Transacción rechazada" : "Operación realizada con éxito");
+
+        String idTxGestoPago = normalizarCodigoExterno(tx.getIdTxGestopago());
+        String numeroAutorizacion = esRechazo ? null : normalizarCodigoExterno(tx.getNumeroAutorizacion());
+
         return PagoServicioResponse.builder()
                 .idTransaccion(tx.getId())
                 .upc(tx.getUpc())
-                .idTxGestoPago(tx.getIdTxGestopago())
-                .numeroAutorizacion(tx.getNumeroAutorizacion())
+                .idTxGestoPago(idTxGestoPago)
+                .numeroAutorizacion(numeroAutorizacion)
                 .numeroCuenta(tx.getCuenta() != null ? tx.getCuenta().getNumeroCuenta() : null)
                 .montoDebitado(tx.getMontoDebitado() != null ? tx.getMontoDebitado() : tx.getMonto())
-                .saldoRestante(tx.getSaldoPosterior())
+                .saldoRestante(saldoRestante)
                 .telefonoReferencia(tx.getTelefonoReferencia())
                 .idProducto(tx.getIdProducto())
                 .idServicio(tx.getIdServicio())
-                .estatus(tx.getEstatus() != null ? tx.getEstatus().name() : "EXITOSA")
-                .mensaje(tx.getMensajeRespuesta() != null ? tx.getMensajeRespuesta() : "Operación realizada con éxito")
+                .estatus(estatusDto)
+                .mensaje(mensaje)
                 .fechaTransaccion(tx.getFechaTransaccion())
                 .build();
+    }
+
+    private String normalizarCodigoExterno(String valor) {
+        if (valor == null) {
+            return null;
+        }
+        String limpio = valor.trim();
+        return (limpio.isEmpty() || "-1".equals(limpio) || "0".equals(limpio)) ? null : limpio;
     }
 }
 

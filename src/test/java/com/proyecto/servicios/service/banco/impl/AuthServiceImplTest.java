@@ -7,11 +7,12 @@ import com.proyecto.servicios.dto.response.auth.LoginResponse;
 import com.proyecto.servicios.entity.banco.SesionActiva;
 import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.exception.banco.CredencialesInvalidasException;
+import com.proyecto.servicios.exception.banco.PinInvalidoException;
 import com.proyecto.servicios.exception.banco.UsuarioInactivoException;
 import com.proyecto.servicios.exception.banco.UsuarioNoEncontradoException;
 import com.proyecto.servicios.repository.banco.UsuarioRepository;
-import com.proyecto.servicios.service.banco.OtpService;
 import com.proyecto.servicios.service.banco.SesionService;
+import com.proyecto.servicios.util.TotpUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,7 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Reglas de Negocio: AuthServiceImpl (Flujo 2FA y Sesión Única)")
+@DisplayName("Reglas de Negocio: AuthServiceImpl (Flujo 2FA Google Authenticator y Sesión Única)")
 class AuthServiceImplTest {
 
     @Mock
@@ -38,8 +40,6 @@ class AuthServiceImplTest {
     private PasswordEncoder passwordEncoder;
     @Mock
     private JwtService jwtService;
-    @Mock
-    private OtpService otpService;
     @Mock
     private SesionService sesionService;
 
@@ -59,14 +59,13 @@ class AuthServiceImplTest {
     }
 
     @Test
-    @DisplayName("login: credenciales válidas y sin sesión previa solicita 2FA (Paso 1)")
+    @DisplayName("login: usuario sin TOTP previo genera secreto, URI y QR de Google Authenticator sin enviar correo")
     void login_exitoso_solicita2fa() {
         LoginRequest req = new LoginRequest("titular@banco.com", "Password123", "MOVIL", false);
 
         when(usuarioRepository.findByCorreo("titular@banco.com")).thenReturn(Optional.of(usuario));
         when(passwordEncoder.matches("Password123", "$2a$10$hash")).thenReturn(true);
         when(sesionService.obtenerSesionActivaPrevia(1L)).thenReturn(Optional.empty());
-        when(otpService.generarYEnviarOtp(usuario, "LOGIN_2FA")).thenReturn(300);
 
         LoginResponse resp = authService.login(req);
 
@@ -74,8 +73,17 @@ class AuthServiceImplTest {
         assertTrue(resp.getRequiere2fa());
         assertFalse(resp.getSesionActivaDetectada());
         assertEquals("titular@banco.com", resp.getCorreo());
-        assertEquals(300, resp.getTiempoExpiracionOtpSegundos());
-        verify(otpService).generarYEnviarOtp(usuario, "LOGIN_2FA");
+        assertEquals("GOOGLE_AUTHENTICATOR", resp.getMetodo2fa());
+        assertTrue(resp.getRequiereConfiguracionTotp());
+        assertNotNull(resp.getTotpSecreto());
+        assertFalse(resp.getTotpSecreto().isBlank());
+        assertNotNull(resp.getTotpOtpAuthUri());
+        assertTrue(resp.getTotpOtpAuthUri().startsWith("otpauth://totp/"));
+        assertNotNull(resp.getTotpQrBase64());
+        assertFalse(resp.getTotpQrBase64().isBlank());
+        verify(usuarioRepository).save(usuario);
+        assertEquals(resp.getTotpSecreto(), usuario.getTotpSecret());
+        assertFalse(Boolean.TRUE.equals(usuario.getTotpHabilitado()));
     }
 
     @Test
@@ -95,25 +103,26 @@ class AuthServiceImplTest {
         assertFalse(resp.getRequiere2fa());
         assertEquals("MOVIL", resp.getDispositivoSesionActiva());
         assertTrue(resp.getMensaje().contains("MOVIL"));
-        verify(otpService, never()).generarYEnviarOtp(any(), any());
+        verify(usuarioRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("login: con forzarCierreSesionAnterior=true invalida sesiones previas y genera OTP")
+    @DisplayName("login: con forzarCierreSesionAnterior=true invalida sesiones previas y entrega configuración TOTP")
     void login_forzarCierreSesion_invalidaYGeneraOtp() {
         LoginRequest req = new LoginRequest("titular@banco.com", "Password123", "WEB", true);
 
         when(usuarioRepository.findByCorreo("titular@banco.com")).thenReturn(Optional.of(usuario));
         when(passwordEncoder.matches("Password123", "$2a$10$hash")).thenReturn(true);
         when(sesionService.obtenerSesionActivaPrevia(1L)).thenReturn(Optional.of(SesionActiva.builder().dispositivo("MOVIL").build()));
-        when(otpService.generarYEnviarOtp(usuario, "LOGIN_2FA")).thenReturn(300);
 
         LoginResponse resp = authService.login(req);
 
         assertNotNull(resp);
         assertTrue(resp.getRequiere2fa());
+        assertEquals("GOOGLE_AUTHENTICATOR", resp.getMetodo2fa());
+        assertTrue(resp.getRequiereConfiguracionTotp());
         verify(sesionService).invalidarSesionesPrevias(1L);
-        verify(otpService).generarYEnviarOtp(usuario, "LOGIN_2FA");
+        verify(usuarioRepository).save(usuario);
     }
 
     @Test
@@ -146,12 +155,15 @@ class AuthServiceImplTest {
     }
 
     @Test
-    @DisplayName("verificarOtp: código válido emite JWT y registra nueva sesión única (Paso 2)")
+    @DisplayName("verificarOtp: código TOTP válido en primera vinculación activa totpHabilitado, emite JWT y registra sesión")
     void verificarOtp_exitoso() {
-        VerificarOtpRequest req = new VerificarOtpRequest("titular@banco.com", "123456", "MOVIL", "10.0.0.1");
+        String secreto = TotpUtil.generarSecretoBase32();
+        usuario.setTotpSecret(secreto);
+        usuario.setTotpHabilitado(false);
+        String codigoActual = TotpUtil.generarCodigo(secreto, Math.floorDiv(Instant.now().getEpochSecond(), TotpUtil.PERIODO_SEGUNDOS));
+        VerificarOtpRequest req = new VerificarOtpRequest("titular@banco.com", codigoActual, "MOVIL", "10.0.0.1");
 
         when(usuarioRepository.findByCorreo("titular@banco.com")).thenReturn(Optional.of(usuario));
-        when(otpService.validarOtp(usuario, "123456", "LOGIN_2FA")).thenReturn(true);
         when(jwtService.generarToken(any(), anyString())).thenReturn("jwt.token.firmado");
 
         LoginResponse resp = authService.verificarOtp(req);
@@ -160,6 +172,8 @@ class AuthServiceImplTest {
         assertEquals("jwt.token.firmado", resp.getToken());
         assertEquals("Bearer", resp.getTipo());
         assertFalse(resp.getRequiere2fa());
+        assertTrue(Boolean.TRUE.equals(usuario.getTotpHabilitado()));
+        verify(usuarioRepository).save(usuario);
         verify(sesionService).registrarNuevaSesion(eq(usuario), anyString(), eq("MOVIL"), eq("10.0.0.1"));
     }
 
@@ -183,6 +197,36 @@ class AuthServiceImplTest {
 
         assertTrue(authService.forzarCierreSesion("titular@banco.com"));
         assertFalse(authService.forzarCierreSesion("otro@banco.com"));
+    }
+
+    @Test
+    @DisplayName("login y verificarOtp: con Google Authenticator activo solicita código sin exponer secreto ni QR")
+    void loginYVerificarTotp_exitoso() {
+        String secreto = TotpUtil.generarSecretoBase32();
+        usuario.setTotpSecret(secreto);
+        usuario.setTotpHabilitado(true);
+
+        LoginRequest loginReq = new LoginRequest("titular@banco.com", "Password123", "WEB", false);
+        when(usuarioRepository.findByCorreo("titular@banco.com")).thenReturn(Optional.of(usuario));
+        when(passwordEncoder.matches("Password123", "$2a$10$hash")).thenReturn(true);
+        when(sesionService.obtenerSesionActivaPrevia(1L)).thenReturn(Optional.empty());
+
+        LoginResponse loginResp = authService.login(loginReq);
+        assertTrue(loginResp.getRequiere2fa());
+        assertEquals("GOOGLE_AUTHENTICATOR", loginResp.getMetodo2fa());
+        assertFalse(loginResp.getRequiereConfiguracionTotp());
+        assertNull(loginResp.getTotpSecreto());
+        assertNull(loginResp.getTotpQrBase64());
+        verify(usuarioRepository, never()).save(any());
+
+        String codigoActual = TotpUtil.generarCodigo(secreto, Math.floorDiv(Instant.now().getEpochSecond(), TotpUtil.PERIODO_SEGUNDOS));
+        when(jwtService.generarToken(any(), anyString())).thenReturn("jwt.totp.ok");
+
+        LoginResponse otpResp = authService.verificarOtp(new VerificarOtpRequest("titular@banco.com", codigoActual, "WEB", "127.0.0.1"));
+        assertEquals("jwt.totp.ok", otpResp.getToken());
+
+        assertThrows(PinInvalidoException.class,
+                () -> authService.verificarOtp(new VerificarOtpRequest("titular@banco.com", "000000".equals(codigoActual) ? "999999" : "000000", "WEB", "127.0.0.1")));
     }
 }
 

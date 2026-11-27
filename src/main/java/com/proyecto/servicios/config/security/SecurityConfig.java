@@ -36,9 +36,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Endpoints Públicos: Autenticación, Registro y Documentación Swagger
                         .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/clientes/disponibilidad").permitAll()
+                        .requestMatchers("/clientes/verificar-correo/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/clientes").permitAll()
                         .requestMatchers(HttpMethod.POST, "/usuarios").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/usuarios/agregar").permitAll()
+                        .requestMatchers("/catalogos/**").permitAll()
                         .requestMatchers("/gestopago/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         // Todo lo demás requiere JWT firmado y usuario activo

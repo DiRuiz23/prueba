@@ -20,6 +20,8 @@ import com.proyecto.servicios.repository.banco.TransaccionServicioRepository;
 import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import com.proyecto.servicios.service.banco.AutorizacionOperacionService;
 import com.proyecto.servicios.service.banco.CuentaDebitoService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService.NotificacionTransaccionData;
 import com.proyecto.servicios.service.banco.strategy.ValidacionMontoResult;
 import com.proyecto.servicios.service.gestopago.CatalogoPagoValidator;
 import com.proyecto.servicios.service.gestopago.GestoPagoTxGateway;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -61,6 +64,8 @@ class PagoServicioServiceImplTest {
         private TransaccionServicioRepository transaccionRepository;
         @Mock
         private UsuarioRepository usuarioRepository;
+        @Mock
+        private NotificacionTransaccionService notificacionTransaccionService;
 
         @Spy
         private ObjectMapper objectMapper = new ObjectMapper();
@@ -71,6 +76,8 @@ class PagoServicioServiceImplTest {
         @BeforeEach
         void setUp() {
                 ReflectionTestUtils.setField(pagoServicioService, "unidad", "083");
+                ReflectionTestUtils.setField(pagoServicioService, "notificacionTransaccionService",
+                                notificacionTransaccionService);
         }
 
         private PagoServicioRequest crearRequest() {
@@ -150,11 +157,67 @@ class PagoServicioServiceImplTest {
 
                 assertNotNull(response);
                 assertEquals("EXITOSA", response.getEstatus());
+                assertTrue(response.getUpc().matches("^\\d{10}$"));
                 assertEquals("TX-12345", response.getIdTxGestoPago());
                 assertEquals("AUTH-999", response.getNumeroAutorizacion());
 
                 verify(autorizacionOperacionService).validarPinTransaccional(cuenta, "1234");
                 verify(cuentaDebitoService).confirmarExito(tx, respXml);
+                ArgumentCaptor<NotificacionTransaccionData> mailCaptor = ArgumentCaptor
+                                .forClass(NotificacionTransaccionData.class);
+                verify(notificacionTransaccionService).notificarResultadoTransaccion(mailCaptor.capture());
+                assertTrue(mailCaptor.getValue().exitosa());
+                assertEquals(CORREO, mailCaptor.getValue().correoDestino());
+        }
+
+        @Test
+        @DisplayName("realizarPagoServicio: genera UPC numérico de 10 dígitos y reintenta si ya existe")
+        void realizarPago_generaUpcDe10DigitosYReintentaSiExiste() {
+                PagoServicioRequest request = crearRequest();
+                Cuenta cuenta = crearCuenta(1L);
+
+                when(autorizacionOperacionService.obtenerCuentaAutorizada(NUMERO_CUENTA, CORREO)).thenReturn(cuenta);
+                when(transaccionRepository.findByCuentaIdAndIdempotencyKey(cuenta.getId(), IDEMPOTENCY_KEY))
+                                .thenReturn(Optional.empty());
+                when(transaccionRepository.existsByUpc(anyString())).thenReturn(true, false);
+
+                ValidacionMontoResult montos = new ValidacionMontoResult(
+                                new BigDecimal("100.00"), BigDecimal.ZERO, new BigDecimal("100.00"), 1);
+                ProductoItem producto = new ProductoItem();
+                producto.setIdProducto(101);
+                producto.setIdServicio(50);
+                producto.setTipoFront(1);
+
+                when(catalogoPagoValidator.validarOperacion(any(), any(), any(), any())).thenReturn(montos);
+                when(catalogoPagoValidator.obtenerYValidarProducto(any(), any())).thenReturn(producto);
+
+                TransaccionServicio tx = crearTx(cuenta, EstatusTransaccionServicio.PENDIENTE);
+                when(cuentaDebitoService.reservarFondosYRegistrar(any(), any(), any(), any(), any(), any(), any(),
+                                any(), any()))
+                                .thenReturn(tx);
+
+                GestoPagoTxResponseXml respXml = new GestoPagoTxResponseXml();
+                respXml.setCodigo("01");
+                respXml.setIdTx("TX-12345");
+                respXml.setNumAutorizacion("AUTH-999");
+
+                when(gestoPagoTxGateway.enviarTransaccion(any(GestoPagoSendTxPayload.class), anyString(),
+                                eq(tx.getId())))
+                                .thenReturn(respXml);
+
+                PagoServicioResponse response = pagoServicioService.realizarPagoServicio(request, CORREO,
+                                IDEMPOTENCY_KEY);
+
+                ArgumentCaptor<GestoPagoSendTxPayload> payloadCaptor = ArgumentCaptor
+                                .forClass(GestoPagoSendTxPayload.class);
+                verify(gestoPagoTxGateway).enviarTransaccion(payloadCaptor.capture(), eq(response.getUpc()),
+                                eq(tx.getId()));
+
+                String upcGenerado = payloadCaptor.getValue().getUpc();
+                assertNotNull(upcGenerado);
+                assertTrue(upcGenerado.matches("^\\d{10}$"));
+                assertEquals(upcGenerado, response.getUpc());
+                verify(transaccionRepository, times(2)).existsByUpc(anyString());
         }
 
         @Test
@@ -333,6 +396,51 @@ class PagoServicioServiceImplTest {
                 assertEquals("99", ex.getCodigoRespuesta());
                 verify(cuentaDebitoService).registrarFalloYReembolsar(tx, rechazoXml,
                                 "Saldo insuficiente de la pasarela");
+                ArgumentCaptor<NotificacionTransaccionData> mailCaptor = ArgumentCaptor
+                                .forClass(NotificacionTransaccionData.class);
+                verify(notificacionTransaccionService).notificarResultadoTransaccion(mailCaptor.capture());
+                assertFalse(mailCaptor.getValue().exitosa());
+                assertEquals("Saldo insuficiente de la pasarela", mailCaptor.getValue().motivo());
+        }
+
+        @Test
+        @DisplayName("realizarPagoServicio: rechazo código 55 con validIPS sanitiza el motivo sin filtrar lista de IPs")
+        void realizarPago_proveedorCodigo55ValidIps_sanitizaMotivoSinFiltrarListaIps() {
+                PagoServicioRequest request = crearRequest();
+                Cuenta cuenta = crearCuenta(1L);
+
+                when(autorizacionOperacionService.obtenerCuentaAutorizada(NUMERO_CUENTA, CORREO)).thenReturn(cuenta);
+                when(transaccionRepository.findByCuentaIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+
+                ValidacionMontoResult montos = new ValidacionMontoResult(new BigDecimal("100.00"), BigDecimal.ZERO,
+                                new BigDecimal("100.00"), 1);
+                ProductoItem producto = new ProductoItem();
+                producto.setTipoFront(1);
+
+                when(catalogoPagoValidator.validarOperacion(any(), any(), any(), any())).thenReturn(montos);
+                when(catalogoPagoValidator.obtenerYValidarProducto(any(), any())).thenReturn(producto);
+
+                TransaccionServicio tx = crearTx(cuenta, EstatusTransaccionServicio.PENDIENTE);
+                when(cuentaDebitoService.reservarFondosYRegistrar(any(), any(), any(), any(), any(), any(), any(),
+                                any(), any()))
+                                .thenReturn(tx);
+
+                GestoPagoTxResponseXml rechazoXml = new GestoPagoTxResponseXml();
+                rechazoXml.setCodigo("55");
+                rechazoXml.setTexto("{validationCompleted=false, codigoDispositivo=GPS83-TPV-17, IP=187.140.67.84, isValid=false, validIPS=(83): [163.192.134.186],[44.205.98.58]}");
+
+                when(gestoPagoTxGateway.enviarTransaccion(any(), any(), any())).thenReturn(rechazoXml);
+
+                ProveedorException ex = assertThrows(ProveedorException.class,
+                                () -> pagoServicioService.realizarPagoServicio(request, CORREO, IDEMPOTENCY_KEY));
+
+                assertEquals("55", ex.getCodigoRespuesta());
+                assertEquals("Transacción rechazada por el proveedor (Código: 55)", ex.getMessage());
+                assertFalse(ex.getMessage().contains("187.140.67.84"));
+                assertFalse(ex.getMessage().contains("IP"));
+                assertFalse(ex.getMessage().contains("validIPS"));
+                verify(cuentaDebitoService).registrarFalloYReembolsar(eq(tx), eq(rechazoXml),
+                                eq("Transacción rechazada por el proveedor"));
         }
 
         @Test

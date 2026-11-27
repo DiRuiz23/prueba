@@ -17,10 +17,12 @@ public class DomicilioRequest {
     private String calle;
 
     @NotBlank(message = "El número exterior es obligatorio")
-    @Size(max = 20, message = "El número exterior no debe exceder los 20 caracteres")
+    @Size(max = 6, message = "El número exterior no debe exceder los 6 caracteres")
+    @Pattern(regexp = PatronesValidacion.NUMERO_DOMICILIO, message = "El número exterior solo permite letras, números, guion o diagonal (máx. 6 caracteres)")
     private String numeroExterior;
 
-    @Size(max = 20, message = "El número interior no debe exceder los 20 caracteres")
+    @Size(max = 6, message = "El número interior no debe exceder los 6 caracteres")
+    @Pattern(regexp = PatronesValidacion.NUMERO_DOMICILIO_OPCIONAL, message = "El número interior solo permite letras, números, guion o diagonal (máx. 6 caracteres)")
     private String numeroInterior;
 
     @NotBlank(message = "La colonia es obligatoria")

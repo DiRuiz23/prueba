@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.config.security.JwtAuthenticationFilter;
 import com.proyecto.servicios.dto.request.banco.PagoServicioRequest;
 import com.proyecto.servicios.dto.response.banco.PagoServicioResponse;
+import com.proyecto.servicios.entity.banco.Cuenta;
+import com.proyecto.servicios.entity.banco.TransaccionServicio;
 import com.proyecto.servicios.exception.banco.IdempotenciaConflictoException;
 import com.proyecto.servicios.exception.banco.PinBloqueadoException;
 import com.proyecto.servicios.exception.banco.SaldoInsuficienteException;
@@ -176,6 +178,38 @@ class TransaccionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestValido())))
                 .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("POST /pago-servicio con rechazo del proveedor y transacción → HTTP 502 incluye ticket y UPC")
+    void pagarServicio_proveedorRechazo_conTicketYUpc() throws Exception {
+        Cuenta cuenta = Cuenta.builder().numeroCuenta("01200000000000000016").saldo(new BigDecimal("1000.00")).build();
+        TransaccionServicio tx = TransaccionServicio.builder()
+                .id(77L)
+                .cuenta(cuenta)
+                .upc("GP123456789012")
+                .telefonoReferencia("5512345678")
+                .idProducto(582)
+                .idServicio(133)
+                .monto(new BigDecimal("50.00"))
+                .montoDebitado(new BigDecimal("50.00"))
+                .saldoAnterior(new BigDecimal("1000.00"))
+                .fechaTransaccion(OffsetDateTime.now())
+                .build();
+
+        when(pagoServicioService.realizarPagoServicio(any(), eq("cliente@banco.com"), any()))
+                .thenThrow(new ProveedorException("Referencia inválida", "14", tx));
+
+        mockMvc.perform(post("/transacciones/pago-servicio")
+                        .principal(principal)
+                        .header("Idempotency-Key", "uuid-502-ticket")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestValido())))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.datos.idTransaccion").value(77))
+                .andExpect(jsonPath("$.datos.upc").value("GP123456789012"))
+                .andExpect(jsonPath("$.datos.estatus").value("RECHAZADA"))
+                .andExpect(jsonPath("$.datos.mensaje").value("Referencia inválida"));
     }
 
     @Test

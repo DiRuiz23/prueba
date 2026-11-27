@@ -178,5 +178,58 @@ class CuentaDebitoServiceImplTest {
         assertEquals(ahora.plusSeconds(90), tx.getProximaConfirmacionAt());
         verify(transaccionRepository).saveAll(reclamadas);
     }
+
+    @Test
+    @DisplayName("Fallo definitivo: trunca campos largos del proveedor para evitar value too long en BD")
+    void registrarFallo_truncaCamposLargosProveedor() {
+        Cuenta c = Cuenta.builder().id(1L).saldo(new BigDecimal("500.00")).build();
+        TransaccionServicio tx = TransaccionServicio.builder()
+                .id(101L)
+                .cuenta(c)
+                .montoDebitado(new BigDecimal("50.00"))
+                .estatus(EstatusTransaccionServicio.PENDIENTE)
+                .build();
+        when(transaccionRepository.findById(101L)).thenReturn(Optional.of(tx));
+        when(cuentaRepository.findById(1L)).thenReturn(Optional.of(c));
+
+        GestoPagoTxResponseXml xml = new GestoPagoTxResponseXml();
+        xml.setIdTx("F".repeat(90));
+        xml.setNumAutorizacion("A".repeat(90));
+        xml.setCodigo("C".repeat(40));
+        xml.setTexto("M".repeat(2500));
+
+        cuentaDebitoService.registrarFalloYReembolsar(tx, xml, "M".repeat(2500));
+
+        assertEquals(60, tx.getIdTxGestopago().length());
+        assertNull(tx.getNumeroAutorizacion());
+        assertEquals(20, tx.getCodigoRespuesta().length());
+        assertEquals(2000, tx.getMensajeRespuesta().length());
+        verify(transaccionRepository).save(tx);
+    }
+
+    @Test
+    @DisplayName("Fallo definitivo: descarta centinelas -1 y 0 en folio/autorización")
+    void registrarFallo_descartaCentinelasProveedor() {
+        Cuenta c = Cuenta.builder().id(1L).saldo(new BigDecimal("1000.00")).build();
+        TransaccionServicio tx = TransaccionServicio.builder()
+                .id(102L)
+                .cuenta(c)
+                .montoDebitado(new BigDecimal("100.00"))
+                .estatus(EstatusTransaccionServicio.PENDIENTE)
+                .build();
+        when(transaccionRepository.findById(102L)).thenReturn(Optional.of(tx));
+        when(cuentaRepository.findById(1L)).thenReturn(Optional.of(c));
+
+        GestoPagoTxResponseXml xml = new GestoPagoTxResponseXml();
+        xml.setIdTx("-1");
+        xml.setNumAutorizacion("-1");
+        xml.setCodigo("55");
+
+        cuentaDebitoService.registrarFalloYReembolsar(tx, xml, "Transacción rechazada por el proveedor");
+
+        assertNull(tx.getIdTxGestopago());
+        assertNull(tx.getNumeroAutorizacion());
+        assertEquals(EstatusTransaccionServicio.FALLIDA, tx.getEstatus());
+    }
 }
 

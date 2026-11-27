@@ -33,6 +33,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -243,10 +245,39 @@ public class GlobalExceptionHandler {
     // ─────────────────────────────────────────────────────────────────────────
 
     @ExceptionHandler(ProveedorException.class)
-    public ResponseEntity<GenericResponse<Void>> manejarProveedorRechazo(ProveedorException ex) {
+    public ResponseEntity<GenericResponse<PagoServicioResponse>> manejarProveedorRechazo(ProveedorException ex) {
         log.warn("Rechazo definitivo del proveedor GestoPago: {}", ex.getMessage());
-        return responder(HttpStatus.BAD_GATEWAY, GenericResponse.error(
-                "No fue posible completar la operación con el proveedor externo: " + ex.getMessage()));
+        PagoServicioResponse datos = null;
+        if (ex.getTransaccion() != null) {
+            TransaccionServicio tx = ex.getTransaccion();
+            String idTxGestoPago = tx.getIdTxGestopago() != null ? tx.getIdTxGestopago().trim() : null;
+            if (idTxGestoPago != null && (idTxGestoPago.isEmpty() || "-1".equals(idTxGestoPago) || "0".equals(idTxGestoPago))) {
+                idTxGestoPago = null;
+            }
+            datos = PagoServicioResponse.builder()
+                    .idTransaccion(tx.getId())
+                    .upc(tx.getUpc())
+                    .idTxGestoPago(idTxGestoPago)
+                    .numeroAutorizacion(null)
+                    .numeroCuenta(tx.getCuenta() != null ? tx.getCuenta().getNumeroCuenta() : null)
+                    .montoDebitado(tx.getMontoDebitado() != null ? tx.getMontoDebitado() : tx.getMonto())
+                    .saldoRestante(tx.getSaldoAnterior() != null
+                            ? tx.getSaldoAnterior()
+                            : (tx.getCuenta() != null ? tx.getCuenta().getSaldo() : null))
+                    .telefonoReferencia(tx.getTelefonoReferencia())
+                    .idProducto(tx.getIdProducto())
+                    .idServicio(tx.getIdServicio())
+                    .estatus("RECHAZADA")
+                    .mensaje(ex.getMessage())
+                    .fechaTransaccion(tx.getFechaTransaccion() != null
+                            ? tx.getFechaTransaccion()
+                            : OffsetDateTime.now(ZoneId.systemDefault()))
+                    .build();
+        }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(GenericResponse.errorConDatos(
+                "No fue posible completar la operación con el proveedor externo: " + ex.getMessage(),
+                datos
+        ));
     }
 
     @ExceptionHandler(ProveedorNoDisponibleException.class)

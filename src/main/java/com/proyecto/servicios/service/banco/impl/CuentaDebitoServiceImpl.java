@@ -31,6 +31,9 @@ import java.time.ZoneId;
 public class CuentaDebitoServiceImpl implements CuentaDebitoService {
 
     private static final String TX_NO_ENCONTRADA_MSG = "Transacción no encontrada: ";
+    private static final int MAX_LEN_CODIGO = 20;
+    private static final int MAX_LEN_FOLIO = 60;
+    private static final int MAX_LEN_MENSAJE = 2000;
 
     private final CuentaRepository cuentaRepository;
     private final TransaccionServicioRepository transaccionRepository;
@@ -114,10 +117,13 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
 
         txActual.setEstatus(EstatusTransaccionServicio.EXITOSA);
         if (txXml != null) {
-            txActual.setIdTxGestopago(txXml.getIdTx());
-            txActual.setNumeroAutorizacion(txXml.getNumAutorizacion());
-            txActual.setCodigoRespuesta(txXml.getCodigo());
-            txActual.setMensajeRespuesta(txXml.getTexto() != null ? txXml.getTexto() : "Transacción exitosa");
+            txActual.setIdTxGestopago(normalizarValorProveedor(txXml.getIdTx(), MAX_LEN_FOLIO));
+            txActual.setNumeroAutorizacion(normalizarValorProveedor(txXml.getNumAutorizacion(), MAX_LEN_FOLIO));
+            txActual.setCodigoRespuesta(truncar(txXml.getCodigo(), MAX_LEN_CODIGO));
+            txActual.setMensajeRespuesta(truncar(
+                    txXml.getTexto() != null ? txXml.getTexto() : "Transacción exitosa",
+                    MAX_LEN_MENSAJE
+            ));
         }
         transaccionRepository.save(txActual);
         log.info("Transacción confirmada EXITOSA. txId={}, upc={}, folioGestoPago={}",
@@ -131,34 +137,41 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
                 .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         if (txActual.getEstatus() == EstatusTransaccionServicio.PENDIENTE) {
-            // Reembolsar saldo atómicamente
-            cuentaRepository.reembolsarSaldoAtomico(txActual.getCuenta().getId(), txActual.getMontoDebitado());
+            Long cuentaId = txActual.getCuenta().getId();
+            BigDecimal montoDebitado = txActual.getMontoDebitado();
 
-            Cuenta cuentaActualizada = cuentaRepository.findById(txActual.getCuenta().getId())
+            // Reembolsar saldo atómicamente (limpia el contexto L1 para leer saldo actualizado)
+            cuentaRepository.reembolsarSaldoAtomico(cuentaId, montoDebitado);
+
+            Cuenta cuentaActualizada = cuentaRepository.findById(cuentaId)
                     .orElseThrow(() -> new CuentaNoEncontradaException("La cuenta no fue encontrada"));
+            txActual = transaccionRepository.findById(tx.getId())
+                    .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
             BigDecimal saldoPosterior = cuentaActualizada.getSaldo();
-            BigDecimal saldoAnterior = saldoPosterior.subtract(txActual.getMontoDebitado());
+            BigDecimal saldoAnterior = saldoPosterior.subtract(montoDebitado);
 
             // Registrar movimiento de REVERSO en el ledger
             MovimientoCuenta movimiento = MovimientoCuenta.builder()
                     .cuenta(cuentaActualizada)
                     .transaccionServicio(txActual)
                     .tipo(TipoMovimientoCuenta.REVERSO_PAGO)
-                    .monto(txActual.getMontoDebitado())
+                    .monto(montoDebitado)
                     .saldoAnterior(saldoAnterior)
                     .saldoPosterior(saldoPosterior)
                     .build();
             movimientoCuentaRepository.save(movimiento);
 
-            // Actualizar transacción a FALLIDA
+            // Actualizar transacción a FALLIDA (una operación rechazada nunca tiene número de autorización)
             txActual.setEstatus(EstatusTransaccionServicio.FALLIDA);
+            txActual.setNumeroAutorizacion(null);
             if (txXml != null) {
-                txActual.setIdTxGestopago(txXml.getIdTx());
-                txActual.setNumeroAutorizacion(txXml.getNumAutorizacion());
-                txActual.setCodigoRespuesta(txXml.getCodigo());
-                txActual.setMensajeRespuesta(txXml.getTexto() != null ? txXml.getTexto() : motivo);
+                txActual.setIdTxGestopago(normalizarValorProveedor(txXml.getIdTx(), MAX_LEN_FOLIO));
+                txActual.setCodigoRespuesta(truncar(txXml.getCodigo(), MAX_LEN_CODIGO));
+                String mensajeFinal = (motivo != null && !motivo.isBlank()) ? motivo : txXml.getTexto();
+                txActual.setMensajeRespuesta(truncar(mensajeFinal, MAX_LEN_MENSAJE));
             } else {
-                txActual.setMensajeRespuesta(motivo);
+                txActual.setIdTxGestopago(null);
+                txActual.setMensajeRespuesta(truncar(motivo, MAX_LEN_MENSAJE));
             }
             transaccionRepository.save(txActual);
             log.info("Transacción FALLIDA y saldo reembolsado. txId={}, upc={}, saldoRestaurado={}",
@@ -178,8 +191,8 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
             OffsetDateTime ahora = OffsetDateTime.now(ZoneId.systemDefault());
             txActual.setProximaConfirmacionAt(ahora.plusSeconds(62));
             txActual.setFechaLimiteConciliacion(ahora.plusHours(24));
-            txActual.setCodigoRespuesta(codigoRespuesta);
-            txActual.setMensajeRespuesta(motivo);
+            txActual.setCodigoRespuesta(truncar(codigoRespuesta, MAX_LEN_CODIGO));
+            txActual.setMensajeRespuesta(truncar(motivo, MAX_LEN_MENSAJE));
             transaccionRepository.save(txActual);
             log.warn("Transacción en estado incierto enviada a EN_CONCILIACION. txId={}, upc={}, motivo={}",
                     txActual.getId(), txActual.getUpc(), motivo);
@@ -193,25 +206,31 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
                 .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
 
         if (txActual.getEstatus() == EstatusTransaccionServicio.EN_CONCILIACION) {
-            cuentaRepository.reembolsarSaldoAtomico(txActual.getCuenta().getId(), txActual.getMontoDebitado());
+            Long cuentaId = txActual.getCuenta().getId();
+            BigDecimal montoDebitado = txActual.getMontoDebitado();
 
-            Cuenta cuentaActualizada = cuentaRepository.findById(txActual.getCuenta().getId())
+            cuentaRepository.reembolsarSaldoAtomico(cuentaId, montoDebitado);
+
+            Cuenta cuentaActualizada = cuentaRepository.findById(cuentaId)
                     .orElseThrow(() -> new CuentaNoEncontradaException("La cuenta no fue encontrada"));
+            txActual = transaccionRepository.findById(tx.getId())
+                    .orElseThrow(() -> new IllegalStateException(TX_NO_ENCONTRADA_MSG + tx.getId()));
             BigDecimal saldoPosterior = cuentaActualizada.getSaldo();
-            BigDecimal saldoAnterior = saldoPosterior.subtract(txActual.getMontoDebitado());
+            BigDecimal saldoAnterior = saldoPosterior.subtract(montoDebitado);
 
             MovimientoCuenta movimiento = MovimientoCuenta.builder()
                     .cuenta(cuentaActualizada)
                     .transaccionServicio(txActual)
                     .tipo(TipoMovimientoCuenta.REVERSO_PAGO)
-                    .monto(txActual.getMontoDebitado())
+                    .monto(montoDebitado)
                     .saldoAnterior(saldoAnterior)
                     .saldoPosterior(saldoPosterior)
                     .build();
             movimientoCuentaRepository.save(movimiento);
 
             txActual.setEstatus(EstatusTransaccionServicio.REVERSADA);
-            txActual.setMensajeRespuesta(motivo);
+            txActual.setNumeroAutorizacion(null);
+            txActual.setMensajeRespuesta(truncar(motivo, MAX_LEN_MENSAJE));
             transaccionRepository.save(txActual);
             log.info("Conciliación determinó transacción no aplicada. Saldo reembolsado y marcada REVERSADA. txId={}",
                     txActual.getId());
@@ -232,6 +251,24 @@ public class CuentaDebitoServiceImpl implements CuentaDebitoService {
             transaccionRepository.saveAll(candidatas);
         }
         return candidatas;
+    }
+
+    private String normalizarValorProveedor(String valor, int max) {
+        if (valor == null) {
+            return null;
+        }
+        String limpio = valor.trim();
+        if (limpio.isEmpty() || "-1".equals(limpio) || "0".equals(limpio)) {
+            return null;
+        }
+        return truncar(limpio, max);
+    }
+
+    private String truncar(String valor, int max) {
+        if (valor == null) {
+            return null;
+        }
+        return valor.length() <= max ? valor : valor.substring(0, max);
     }
 }
 

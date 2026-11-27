@@ -27,11 +27,23 @@ public class LoginResponse {
 
     private Integer tiempoExpiracionOtpSegundos;
 
+    private String metodo2fa;
+
+    @Builder.Default
+    private Boolean requiereConfiguracionTotp = false;
+
+    private String totpSecreto;
+
+    private String totpOtpAuthUri;
+
+    private String totpQrBase64;
+
     public LoginResponse(String token, String tipo, String correo) {
         this.token = token;
         this.tipo = tipo;
         this.correo = correo;
         this.requiere2fa = false;
         this.sesionActivaDetectada = false;
+        this.requiereConfiguracionTotp = false;
     }
 }

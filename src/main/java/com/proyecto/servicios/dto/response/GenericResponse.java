@@ -55,6 +55,15 @@ public class GenericResponse<T> {
         return respuesta;
     }
 
+    /** Respuesta de error que además incluye datos estructurados (ej. ticket de rechazo con UPC). */
+    public static <T> GenericResponse<T> errorConDatos(String mensaje, T datos) {
+        GenericResponse<T> respuesta = new GenericResponse<>();
+        respuesta.setCodigo(CODIGO_ERROR);
+        respuesta.setMensaje(mensaje);
+        respuesta.setDatos(datos);
+        return respuesta;
+    }
+
     /** Respuesta de error de validación con el detalle campo → mensaje. */
     public static GenericResponse<Void> errorValidacion(String mensaje, Map<String, String> errores) {
         GenericResponse<Void> respuesta = error(mensaje);

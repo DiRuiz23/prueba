@@ -6,6 +6,8 @@ import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.banco.PinBloqueadoException;
 import com.proyecto.servicios.exception.banco.PinInvalidoException;
 import com.proyecto.servicios.repository.banco.OtpTokenRepository;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +17,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import java.nio.charset.StandardCharsets;
@@ -66,13 +67,14 @@ class OtpServiceImplTest {
     void generarYEnviarOtp_exitoso() {
         ArgumentCaptor<OtpToken> captor = ArgumentCaptor.forClass(OtpToken.class);
         when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
+        when(mailSender.createMimeMessage()).thenReturn(new MimeMessage((Session) null));
 
         int expiracion = otpService.generarYEnviarOtp(usuario, "LOGIN_2FA");
 
         assertEquals(300, expiracion);
         verify(otpTokenRepository).invalidarOtpsPrevios(5L, "LOGIN_2FA");
         verify(otpTokenRepository).save(captor.capture());
-        verify(mailSender).send(any(SimpleMailMessage.class));
+        verify(mailSender).send(any(MimeMessage.class));
 
         OtpToken guardado = captor.getValue();
         assertNotNull(guardado);
@@ -93,7 +95,7 @@ class OtpServiceImplTest {
 
         assertEquals(300, expiracion);
         verify(otpTokenRepository).invalidarOtpsPrevios(5L, OtpServiceImpl.PROPOSITO_LOGIN_2FA);
-        verify(mailSender, never()).send(any(SimpleMailMessage.class));
+        verify(mailSender, never()).send(any(MimeMessage.class));
     }
 
     @Test
