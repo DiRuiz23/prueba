@@ -4,9 +4,15 @@ import { Router } from '@angular/router';
 import { Observable, tap, catchError, of } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
+  ClienteResponse,
+  DisponibilidadRegistroResponse,
   GenericResponse,
   LoginRequest,
   LoginResponse,
+  RegistroClienteRequest,
+  TotpConfigResponse,
+  TotpEstadoResponse,
+  UbicacionCatalogoResponse,
   VerificarOtpRequest
 } from '../models/api.models';
 
@@ -73,6 +79,84 @@ export class AuthService {
     return this.http.post<GenericResponse<boolean>>(`${this.baseUrl}/forzar-cierre-sesion`, {
       correo: correo.trim().toLowerCase()
     });
+  }
+
+  registrarCliente(payload: RegistroClienteRequest): Observable<GenericResponse<ClienteResponse>> {
+    return this.http.post<GenericResponse<ClienteResponse>>(`${environment.apiUrl}/clientes`, payload);
+  }
+
+  obtenerUbicacionesPorEstado(estado: string): Observable<GenericResponse<UbicacionCatalogoResponse[]>> {
+    return this.http.get<GenericResponse<UbicacionCatalogoResponse[]>>(
+      `${environment.apiUrl}/catalogos/ubicaciones`,
+      { params: { estado } }
+    );
+  }
+
+  buscarPorCodigoPostal(codigoPostal: string): Observable<GenericResponse<UbicacionCatalogoResponse[]>> {
+    return this.http.get<GenericResponse<UbicacionCatalogoResponse[]>>(
+      `${environment.apiUrl}/catalogos/cp/${codigoPostal.trim()}`
+    );
+  }
+
+  obtenerOcupaciones(): Observable<GenericResponse<string[]>> {
+    return this.http.get<GenericResponse<string[]>>(`${environment.apiUrl}/catalogos/ocupaciones`);
+  }
+
+  obtenerColoniasPorCp(codigoPostal: string): Observable<GenericResponse<string[]>> {
+    return this.http.get<GenericResponse<string[]>>(`${environment.apiUrl}/catalogos/colonias`, {
+      params: { codigoPostal: codigoPostal.trim() }
+    });
+  }
+
+  obtenerEstadoTotp(): Observable<GenericResponse<TotpEstadoResponse>> {
+    return this.http.get<GenericResponse<TotpEstadoResponse>>(`${environment.apiUrl}/seguridad/totp/estado`);
+  }
+
+  configurarTotp(): Observable<GenericResponse<TotpConfigResponse>> {
+    return this.http.post<GenericResponse<TotpConfigResponse>>(`${environment.apiUrl}/seguridad/totp/configurar`, {});
+  }
+
+  activarTotp(codigo: string): Observable<GenericResponse<TotpEstadoResponse>> {
+    return this.http.post<GenericResponse<TotpEstadoResponse>>(`${environment.apiUrl}/seguridad/totp/activar`, {
+      codigo: codigo.trim()
+    });
+  }
+
+  desactivarTotp(password: string): Observable<GenericResponse<TotpEstadoResponse>> {
+    return this.http.post<GenericResponse<TotpEstadoResponse>>(`${environment.apiUrl}/seguridad/totp/desactivar`, {
+      password
+    });
+  }
+
+  verificarDisponibilidad(params: {
+    curp?: string;
+    rfc?: string;
+    correo?: string;
+    telefonoMovil?: string;
+  }): Observable<GenericResponse<DisponibilidadRegistroResponse>> {
+    const query: Record<string, string> = {};
+    if (params.curp?.trim()) query['curp'] = params.curp.trim().toUpperCase();
+    if (params.rfc?.trim()) query['rfc'] = params.rfc.trim().toUpperCase();
+    if (params.correo?.trim()) query['correo'] = params.correo.trim().toLowerCase();
+    if (params.telefonoMovil?.trim()) query['telefonoMovil'] = params.telefonoMovil.trim();
+    return this.http.get<GenericResponse<DisponibilidadRegistroResponse>>(
+      `${environment.apiUrl}/clientes/disponibilidad`,
+      { params: query }
+    );
+  }
+
+  enviarCodigoVerificacionCorreo(correo: string): Observable<GenericResponse<{ segundosExpiracion: number }>> {
+    return this.http.post<GenericResponse<{ segundosExpiracion: number }>>(
+      `${environment.apiUrl}/clientes/verificar-correo/enviar`,
+      { correo: correo.trim().toLowerCase() }
+    );
+  }
+
+  confirmarCodigoVerificacionCorreo(correo: string, codigo: string): Observable<GenericResponse<boolean>> {
+    return this.http.post<GenericResponse<boolean>>(
+      `${environment.apiUrl}/clientes/verificar-correo/confirmar`,
+      { correo: correo.trim().toLowerCase(), codigo: codigo.trim() }
+    );
   }
 
   logout(motivo?: string): void {

@@ -20,6 +20,7 @@ import {
 export class ComercioService {
   private readonly http = inject(HttpClient);
   private readonly apiUrl = environment.apiUrl;
+  private readonly ticketsLocalesKey = 'apphasani_tickets_rechazo_locales';
 
   // Caché en memoria para evitar peticiones repetitivas de catálogo en la sesión
   private catalogoCache: ProductoItem[] | null = null;
@@ -38,25 +39,32 @@ export class ComercioService {
     this.cargandoPerfil.set(true);
 
     this.http
-      .post<GenericResponse<PaginaResponse<ClienteResponse>>>(`${this.apiUrl}/clientes/consultar`, {
-        correo,
-        paginacion: { pagina: 0, tamanio: 1 }
-      })
+      .get<GenericResponse<CuentaResponse[]>>(`${this.apiUrl}/cuentas/mias`)
       .pipe(
-        switchMap((resp) => {
-          const cliente = resp.datos?.contenido?.[0] ?? null;
-          this.clienteActual.set(cliente);
-          if (!cliente) {
-            return of([] as CuentaResponse[]);
-          }
-          return this.http
-            .post<GenericResponse<PaginaResponse<CuentaResponse>>>(`${this.apiUrl}/cuentas/consultar`, {
-              clienteId: cliente.id,
-              paginacion: { pagina: 0, tamanio: 10 }
+        map((resp) => resp.datos ?? []),
+        catchError(() =>
+          this.http
+            .post<GenericResponse<PaginaResponse<ClienteResponse>>>(`${this.apiUrl}/clientes/consultar`, {
+              correo,
+              paginacion: { pagina: 0, tamanio: 1 }
             })
-            .pipe(map((cResp) => cResp.datos?.contenido ?? []));
-        }),
-        catchError(() => of([] as CuentaResponse[]))
+            .pipe(
+              switchMap((resp) => {
+                const cliente = resp.datos?.contenido?.[0] ?? null;
+                this.clienteActual.set(cliente);
+                if (!cliente) {
+                  return of([] as CuentaResponse[]);
+                }
+                return this.http
+                  .post<GenericResponse<PaginaResponse<CuentaResponse>>>(`${this.apiUrl}/cuentas/consultar`, {
+                    clienteId: cliente.id,
+                    paginacion: { pagina: 0, tamanio: 10 }
+                  })
+                  .pipe(map((cResp) => cResp.datos?.contenido ?? []));
+              }),
+              catchError(() => of([] as CuentaResponse[]))
+            )
+        )
       )
       .subscribe((cuentas) => {
         this.cuentasUsuario.set(cuentas);
@@ -98,6 +106,60 @@ export class ComercioService {
     this.cuentasUsuario.set([]);
     this.cuentaActiva.set(null);
     this.productoSeleccionado.set(null);
+    sessionStorage.removeItem(this.ticketsLocalesKey);
+  }
+
+  registrarTicketHistorialLocal(ticket: PagoServicioResponse): void {
+    const actuales = this.obtenerTicketsLocales();
+    const filtrados = actuales.filter(
+      (t) => !(t.upc === ticket.upc && t.fechaTransaccion === ticket.fechaTransaccion)
+    );
+    const actualizados = [ticket, ...filtrados].slice(0, 30);
+    try {
+      sessionStorage.setItem(this.ticketsLocalesKey, JSON.stringify(actualizados));
+    } catch {
+      // Ignora límite de sessionStorage
+    }
+  }
+
+  obtenerTicketsLocales(): PagoServicioResponse[] {
+    try {
+      const raw = sessionStorage.getItem(this.ticketsLocalesKey);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? (parsed as PagoServicioResponse[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  descargarTicketTxt(ticket: PagoServicioResponse, nombreServicio?: string): void {
+    const lineas = [
+      '========================================',
+      '        APPHASANI - TICKET DE PAGO      ',
+      '========================================',
+      `Estatus     : ${ticket.estatus}`,
+      ...(nombreServicio ? [`Servicio    : ${nombreServicio}`] : []),
+      ...(ticket.idTransaccion > 0 ? [`Transaccion : #${ticket.idTransaccion}`] : []),
+      `UPC         : ${ticket.upc || 'No generado'}`,
+      ...(ticket.idTxGestoPago ? [`Folio       : ${ticket.idTxGestoPago}`] : []),
+      ...(ticket.numeroAutorizacion ? [`Autoriz.    : ${ticket.numeroAutorizacion}`] : []),
+      `Cuenta      : •••• ${ticket.numeroCuenta.slice(-4)}`,
+      `Referencia  : ${ticket.telefonoReferencia}`,
+      `Importe     : $${Number(ticket.montoDebitado).toFixed(2)} MXN`,
+      `Fecha       : ${new Date(ticket.fechaTransaccion).toLocaleString('es-MX')}`,
+      ...(ticket.mensaje
+        ? ['----------------------------------------', 'Detalle:', ticket.mensaje]
+        : []),
+      '========================================'
+    ];
+    const blob = new Blob([lineas.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ticket-${(ticket.estatus || 'pago').toLowerCase()}-${ticket.upc || 'apphasani'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   obtenerProductos(forzarRecarga = false): Observable<ProductoItem[]> {

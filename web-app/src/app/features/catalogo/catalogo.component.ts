@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComercioService } from '../../core/services/comercio.service';
 import { ProductoItem } from '../../core/models/api.models';
+import { environment } from '../../../environments/environment';
 
 interface MarcaVisual {
   siglas: string;
@@ -28,7 +29,7 @@ interface MarcaVisual {
       <div class="toolbar">
         <div class="search">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="search" class="input" placeholder="Buscar" aria-label="Buscar servicio"
+          <input type="search" maxlength="60" class="input" placeholder="Buscar" aria-label="Buscar servicio"
                  [ngModel]="busqueda()" (ngModelChange)="onBuscar($event)" />
         </div>
         <div class="seg" role="tablist">
@@ -48,18 +49,52 @@ interface MarcaVisual {
       } @else if (productosPaginados().length === 0) {
         <div class="surface center"><span class="muted">Sin resultados</span></div>
       } @else {
-        <div class="list">
+        <div class="cards-grid">
           @for (item of productosPaginados(); track item.idProducto + '-' + item.idServicio) {
-            <button type="button" class="item" (click)="seleccionarProducto(item)">
-              <span class="avatar" [style.background]="estiloMarca(item).bg" [style.color]="estiloMarca(item).color">{{ estiloMarca(item).siglas }}</span>
-              <span class="grow">
-                <span class="title" style="display:block">{{ item.producto }}</span>
-                <span class="sub" style="display:block">{{ item.servicio }}</span>
-              </span>
-              <span class="end">
-                <span class="amount">{{ esPrecioFijo(item.precio) ? (item.precio | currency: 'MXN' : 'symbol-narrow' : '1.2-2') : 'Variable' }}</span>
-              </span>
-            </button>
+            <article class="svc-card" (click)="seleccionarProducto(item)">
+              <div class="card-top">
+                @if (tieneImagen(item.idServicio)) {
+                  <span class="avatar-circle has-img">
+                    <img class="avatar-img" [src]="urlImagenServicio(item.idServicio)" [alt]="item.servicio"
+                         loading="lazy" (error)="marcarImagenFallida(item.idServicio)" />
+                  </span>
+                } @else {
+                  <span class="avatar-circle" [style.background]="estiloMarca(item).bg" [style.color]="estiloMarca(item).color">
+                    {{ estiloMarca(item).siglas }}
+                  </span>
+                }
+                <span class="cat-pill" [class.recarga]="item.tipoFront === 1">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  {{ item.tipoFront === 1 ? 'Recarga' : 'Servicio' }}
+                </span>
+              </div>
+
+              <div class="card-body">
+                <div class="provider-line">
+                  <strong class="provider">{{ item.servicio }}</strong>
+                  <span class="faint small">Pago inmediato</span>
+                </div>
+                <h3 class="card-title">{{ item.producto }}</h3>
+                <div class="tags">
+                  <span class="tag">{{ item.tipoFront === 1 ? 'Tiempo aire' : 'Pago de servicio' }}</span>
+                  <span class="tag">{{ esPrecioFijo(item.precio) ? 'Monto fijo' : 'Monto variable' }}</span>
+                </div>
+              </div>
+
+              <div class="card-divider"></div>
+
+              <div class="card-foot">
+                <div class="price-block">
+                  <strong class="price num">
+                    {{ esPrecioFijo(item.precio) ? (item.precio | currency: 'MXN' : 'symbol-narrow' : '1.2-2') : 'Variable' }}
+                  </strong>
+                  <span class="faint small">Cargo a tu cuenta</span>
+                </div>
+                <button type="button" class="btn-card" (click)="seleccionarProducto(item); $event.stopPropagation()">
+                  Pagar ahora
+                </button>
+              </div>
+            </article>
           }
         </div>
 
@@ -74,7 +109,58 @@ interface MarcaVisual {
     </div>
   `,
   styles: [`
-    .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.15rem; }
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .svc-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+    .svc-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(11, 122, 90, 0.35);
+      box-shadow: 0 10px 24px rgba(11, 122, 90, 0.09);
+    }
+    .card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.95rem; }
+    .avatar-circle {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 1px solid var(--line);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.92rem; flex-shrink: 0;
+    }
+    .avatar-circle.has-img { background: #fff; padding: 5px; overflow: hidden; }
+    .avatar-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .cat-pill {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      padding: 0.3rem 0.65rem; border-radius: 10px;
+      background: #f1f5f9; color: var(--ink-2); font-size: 0.78rem; font-weight: 600;
+    }
+    .cat-pill.recarga { background: var(--brand-soft); color: var(--brand); }
+    .card-body { flex: 1; }
+    .provider-line { display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+    .provider { font-size: 0.92rem; font-weight: 700; color: var(--ink); }
+    .card-title { font-size: 1.12rem; font-weight: 700; color: var(--ink); margin: 0 0 0.7rem; line-height: 1.3; }
+    .tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .tag {
+      padding: 0.28rem 0.6rem; border-radius: 8px;
+      background: #f1f5f9; color: var(--ink-2); font-size: 0.76rem; font-weight: 600;
+    }
+    .card-divider { height: 1px; background: var(--line); margin: 1.1rem 0 0.95rem; }
+    .card-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .price-block { display: flex; flex-direction: column; line-height: 1.25; }
+    .price { font-size: 1.08rem; font-weight: 800; color: var(--ink); }
+    .btn-card {
+      border: none; border-radius: 12px; min-height: 40px; padding: 0 1rem;
+      background: var(--brand); color: #fff; font: inherit; font-size: 0.86rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s ease;
+    }
+    .btn-card:hover { background: var(--brand-hover); }
   `]
 })
 export class CatalogoComponent implements OnInit {
@@ -88,6 +174,7 @@ export class CatalogoComponent implements OnInit {
   readonly filtroTipo = signal<'TODOS' | 'RECARGA' | 'SERVICIO'>('TODOS');
   readonly paginaActual = signal(0);
   readonly tamanioPagina = 12;
+  readonly imagenesFallidas = signal<Record<number, boolean>>({});
 
   readonly productosFiltrados = computed(() => {
     const q = this.busqueda().trim().toLowerCase();
@@ -147,6 +234,19 @@ export class CatalogoComponent implements OnInit {
   esPrecioFijo(precio?: string): boolean {
     const num = Number.parseFloat(precio ?? '');
     return !Number.isNaN(num) && num > 0;
+  }
+
+  urlImagenServicio(idServicio: number): string {
+    return `${environment.apiUrl}/gestopago/servicios/${idServicio}/imagen`;
+  }
+
+  tieneImagen(idServicio?: number): boolean {
+    return !!idServicio && idServicio > 0 && !this.imagenesFallidas()[idServicio];
+  }
+
+  marcarImagenFallida(idServicio?: number): void {
+    if (!idServicio) return;
+    this.imagenesFallidas.update((prev) => ({ ...prev, [idServicio]: true }));
   }
 
   estiloMarca(item: ProductoItem): MarcaVisual {

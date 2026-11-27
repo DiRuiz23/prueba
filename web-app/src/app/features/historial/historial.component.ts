@@ -28,15 +28,18 @@ import { PagoServicioResponse } from '../../core/models/api.models';
         <div class="surface center"><span class="muted">Sin operaciones</span></div>
       } @else {
         <div class="list">
-          @for (item of operaciones(); track item.idTransaccion) {
+          @for (item of operaciones(); track item.idTransaccion + '-' + item.upc + '-' + item.fechaTransaccion) {
             <button type="button" class="item" (click)="detalleSeleccionado.set(item)">
               <span class="grow">
                 <span class="title" style="display:block">Producto #{{ item.idProducto || '—' }} · <span class="num">{{ item.telefonoReferencia }}</span></span>
-                <span class="sub num" style="display:block">{{ item.fechaTransaccion | date: 'dd MMM yyyy, HH:mm' }}</span>
+                <span class="sub num" style="display:block">
+                  {{ item.fechaTransaccion | date: 'dd MMM yyyy, HH:mm' }}
+                  @if (item.upc) { · UPC {{ item.upc }} }
+                </span>
               </span>
               <span class="end">
                 <span class="amount" style="display:block">{{ item.montoDebitado | currency: 'MXN' : 'symbol-narrow' : '1.2-2' }}</span>
-                <span class="badge badge-success">Exitosa</span>
+                <span [class]="'badge ' + claseBadge(item.estatus)">{{ etiquetaEstatus(item.estatus) }}</span>
               </span>
             </button>
           }
@@ -53,18 +56,36 @@ import { PagoServicioResponse } from '../../core/models/api.models';
     @if (detalleSeleccionado(); as det) {
       <div class="modal-backdrop" role="dialog" aria-modal="true" (click)="detalleSeleccionado.set(null)">
         <div class="modal" (click)="$event.stopPropagation()">
-          <span class="badge badge-success">Exitosa</span>
+          <span [class]="'badge ' + claseBadge(det.estatus)">{{ etiquetaEstatus(det.estatus) }}</span>
           <div class="total num">{{ det.montoDebitado | currency: 'MXN' : 'symbol-narrow' : '1.2-2' }}</div>
+
+          @if (det.estatus !== 'EXITOSA' && det.mensaje) {
+            <div [class]="det.estatus === 'EN_PROCESO' ? 'alert alert-warning' : 'alert alert-danger'" style="margin-bottom: 0.9rem;">
+              <strong>{{ det.estatus === 'EN_PROCESO' ? 'Estado:' : 'Motivo del rechazo:' }}</strong> {{ det.mensaje }}
+            </div>
+          }
+
           <dl class="dl">
             <div><dt>Fecha</dt><dd class="num">{{ det.fechaTransaccion | date: 'dd/MM/yyyy HH:mm:ss' }}</dd></div>
+            @if (det.idTransaccion > 0) {
+              <div><dt>Transacción</dt><dd class="num">#{{ det.idTransaccion }}</dd></div>
+            }
             <div><dt>Producto</dt><dd class="num">#{{ det.idProducto }} / #{{ det.idServicio }}</dd></div>
             <div><dt>Cuenta</dt><dd class="num">•••• {{ det.numeroCuenta.slice(-4) }}</dd></div>
             <div><dt>Referencia</dt><dd class="num">{{ det.telefonoReferencia }}</dd></div>
-            <div><dt>Autorización</dt><dd class="num">{{ det.numeroAutorizacion || '—' }}</dd></div>
-            <div><dt>Folio</dt><dd class="num">{{ det.idTxGestoPago || '—' }}</dd></div>
-            <div><dt>UPC</dt><dd class="num">{{ det.upc }}</dd></div>
+            @if (det.numeroAutorizacion) {
+              <div><dt>Autorización</dt><dd class="num">{{ det.numeroAutorizacion }}</dd></div>
+            }
+            @if (det.idTxGestoPago) {
+              <div><dt>Folio</dt><dd class="num">{{ det.idTxGestoPago }}</dd></div>
+            }
+            <div><dt>UPC</dt><dd class="num">{{ det.upc || 'No generado' }}</dd></div>
+            @if (det.saldoRestante !== undefined && det.saldoRestante !== null) {
+              <div><dt>Saldo cuenta</dt><dd class="num">{{ det.saldoRestante | currency: 'MXN' : 'symbol-narrow' : '1.2-2' }}</dd></div>
+            }
           </dl>
           <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" (click)="descargarTicket(det)">Descargar ticket</button>
             <button type="button" class="btn btn-primary" (click)="detalleSeleccionado.set(null)">Cerrar</button>
           </div>
         </div>
@@ -95,7 +116,12 @@ export class HistorialComponent implements OnInit {
     this.errorMsg.set(null);
     this.comercioService.obtenerHistorialExitoso(pagina, 10).subscribe({
       next: (page) => {
-        this.operaciones.set(page.content);
+        const locales = pagina === 0 ? this.comercioService.obtenerTicketsLocales() : [];
+        const remotos = page.content ?? [];
+        const unicosLocales = locales.filter(
+          (loc) => !remotos.some((r) => r.upc === loc.upc && r.fechaTransaccion === loc.fechaTransaccion)
+        );
+        this.operaciones.set([...unicosLocales, ...remotos]);
         this.paginaActual.set(page.number);
         this.totalPaginas.set(Math.max(1, page.totalPages));
         this.esUltimaPagina.set(page.last);
@@ -107,5 +133,23 @@ export class HistorialComponent implements OnInit {
         this.errorMsg.set(body?.mensaje || 'No fue posible consultar el historial.');
       }
     });
+  }
+
+  etiquetaEstatus(estatus?: string): string {
+    if (estatus === 'EXITOSA') return 'Exitosa';
+    if (estatus === 'EN_PROCESO') return 'En proceso';
+    if (estatus === 'REVERSADA') return 'Reversada';
+    if (estatus === 'RECHAZADA' || estatus === 'FALLIDA') return 'Rechazada';
+    return estatus || 'Desconocido';
+  }
+
+  claseBadge(estatus?: string): string {
+    if (estatus === 'EXITOSA') return 'badge-success';
+    if (estatus === 'EN_PROCESO') return 'badge-warning';
+    return 'badge-danger';
+  }
+
+  descargarTicket(det: PagoServicioResponse): void {
+    this.comercioService.descargarTicketTxt(det, `Producto #${det.idProducto || '—'}`);
   }
 }
