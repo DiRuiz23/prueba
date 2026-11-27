@@ -15,6 +15,7 @@ import com.proyecto.servicios.service.gestopago.GestoPagoTxGateway;
 import com.proyecto.servicios.util.AesCifradoUtil;
 import feign.FeignException;
 import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Unmarshaller;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +26,8 @@ import java.io.StringReader;
 @Service
 @Slf4j
 public class FeignGestoPagoTxGateway implements GestoPagoTxGateway {
+
+    private static final String MASCARA_REEMPLAZO = "$1******$3";
 
     private final GestoPagoTxClient gestoPagoTxClient;
     private final GestoPagoTokenService tokenService;
@@ -79,7 +82,6 @@ public class FeignGestoPagoTxGateway implements GestoPagoTxGateway {
         long inicioMs = System.currentTimeMillis();
         String responseXmlStr = null;
         int httpStatus = 200;
-        boolean tokenRefrescado = false;
 
         String token = tokenService.obtenerTokenBearerValido();
 
@@ -91,7 +93,6 @@ public class FeignGestoPagoTxGateway implements GestoPagoTxGateway {
                     e.status(), transaccionId);
             try {
                 token = tokenService.forzarRenovacionYObtenerToken();
-                tokenRefrescado = true;
                 responseXmlStr = llamarEndpoint(tipoOperacion, token, random, signed);
             } catch (Exception reintentoEx) {
                 log.error("Fallo definitivo tras refresh-once de token. txId={}", transaccionId, reintentoEx);
@@ -184,7 +185,7 @@ public class FeignGestoPagoTxGateway implements GestoPagoTxGateway {
         }
     }
 
-    private GestoPagoTxResponseXml parsearXml(String xml) throws Exception {
+    private GestoPagoTxResponseXml parsearXml(String xml) throws JAXBException {
         if (xml == null || xml.trim().isEmpty()) {
             throw new IllegalArgumentException("La respuesta XML está vacía");
         }
@@ -224,13 +225,13 @@ public class FeignGestoPagoTxGateway implements GestoPagoTxGateway {
     private String enmascararPayloadParaBitacora(String json) {
         if (json == null) return null;
         // Enmascarar números de teléfono y referencias (dejar solo los últimos 4 dígitos)
-        return json.replaceAll("(\"telefono\"\\s*:\\s*\")(\\d{0,16})(\\d{4}\")", "$1******$3")
-                   .replaceAll("(\"referencia\"\\s*:\\s*\")(.{0,96})(.{4}\")", "$1******$3");
+        return json.replaceAll("(\"telefono\"\\s*:\\s*\")(\\d{0,16})(\\d{4}\")", MASCARA_REEMPLAZO)
+                   .replaceAll("(\"referencia\"\\s*:\\s*\")(.{0,96})(.{4}\")", MASCARA_REEMPLAZO);
     }
 
     private String enmascararXmlParaBitacora(String xml) {
         if (xml == null) return null;
-        return xml.replaceAll("(<REFERENCIA>)(.{0,96})(.{4}</REFERENCIA>)", "$1******$3");
+        return xml.replaceAll("(<REFERENCIA>)(.{0,96})(.{4}</REFERENCIA>)", MASCARA_REEMPLAZO);
     }
 }
 

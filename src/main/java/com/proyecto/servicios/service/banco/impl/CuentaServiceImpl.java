@@ -6,12 +6,15 @@ import com.proyecto.servicios.dto.response.banco.CuentaResponse;
 import com.proyecto.servicios.dto.response.banco.SaldoResponse;
 import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Cuenta;
+import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.enums.EstatusCuenta;
 import com.proyecto.servicios.exception.banco.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.banco.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.banco.UsuarioNoEncontradoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.repository.banco.ClienteRepository;
 import com.proyecto.servicios.repository.banco.CuentaRepository;
+import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import com.proyecto.servicios.repository.specification.CuentaSpecification;
 import com.proyecto.servicios.service.banco.CuentaService;
 import com.proyecto.servicios.util.PaginacionUtils;
@@ -25,14 +28,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class CuentaServiceImpl implements CuentaService {
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String CUENTA_NO_ENCONTRADA_MSG = "No se encontró la cuenta con número: ";
+
     private final CuentaRepository cuentaRepository;
     private final ClienteRepository clienteRepository;
+    private final UsuarioRepository usuarioRepository;
 
     // ─────────────────────────────────────────────────────────────────────────
     // CONSULTAS
@@ -40,11 +48,29 @@ public class CuentaServiceImpl implements CuentaService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<CuentaResponse> obtenerMisCuentas(String correoAutenticado) {
+        if (correoAutenticado == null || correoAutenticado.isBlank()) {
+            return List.of();
+        }
+        String norm = correoAutenticado.trim().toLowerCase();
+        Usuario usuario = usuarioRepository.findByCorreo(norm)
+                .or(() -> usuarioRepository.findByCorreoIgnoreCase(norm))
+                .orElseThrow(() -> new UsuarioNoEncontradoException("No se encontró el usuario autenticado."));
+        if (usuario.getCliente() == null) {
+            return List.of();
+        }
+        return cuentaRepository.findByClienteId(usuario.getCliente().getId()).stream()
+                .map(CuentaResponse::desdeEntidad)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public CuentaResponse consultarPorNumeroCuenta(NumeroCuentaRequest request) {
         String num = request.getNumeroCuenta().trim();
         return cuentaRepository.findByNumeroCuenta(num)
                 .map(CuentaResponse::desdeEntidad)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
     }
 
     @Override
@@ -76,7 +102,7 @@ public class CuentaServiceImpl implements CuentaService {
                 .orElseThrow(() -> new ClienteNoEncontradoException(
                         "No se encontró el cliente con ID: " + request.getClienteId()));
 
-        if (!cliente.getActivo()) {
+        if (!Boolean.TRUE.equals(cliente.getActivo())) {
             throw new ReglaNegocioException("No se pueden abrir cuentas para un cliente dado de baja.");
         }
 
@@ -109,10 +135,10 @@ public class CuentaServiceImpl implements CuentaService {
     public CuentaResponse cambiarEstatusCuenta(ActualizarEstatusCuentaRequest request) {
         String num = request.getNumeroCuenta().trim();
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(num)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
 
         // Regla: no se puede activar la cuenta de un cliente dado de baja
-        if (request.getNuevoEstatus() == EstatusCuenta.ACTIVA && !cuenta.getCliente().getActivo()) {
+        if (request.getNuevoEstatus() == EstatusCuenta.ACTIVA && !Boolean.TRUE.equals(cuenta.getCliente().getActivo())) {
             throw new ReglaNegocioException("No se puede activar una cuenta perteneciente a un cliente inactivo.");
         }
 
@@ -131,7 +157,7 @@ public class CuentaServiceImpl implements CuentaService {
     public SaldoResponse consultarSaldo(NumeroCuentaRequest request) {
         String num = request.getNumeroCuenta().trim();
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(num)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No se encontró la cuenta con número: " + num));
+                .orElseThrow(() -> new CuentaNoEncontradaException(CUENTA_NO_ENCONTRADA_MSG + num));
         return new SaldoResponse(cuenta.getNumeroCuenta(), cuenta.getSaldo());
     }
 
@@ -140,10 +166,9 @@ public class CuentaServiceImpl implements CuentaService {
     // ─────────────────────────────────────────────────────────────────────────
 
     private String generarNumeroCuenta() {
-        SecureRandom random = new SecureRandom();
         String numero;
         do {
-            long sufijo = 1_000_000_000L + (long) (random.nextDouble() * 9_000_000_000L);
+            long sufijo = 1_000_000_000L + (long) (SECURE_RANDOM.nextDouble() * 9_000_000_000L);
             numero = "012" + sufijo;
         } while (cuentaRepository.existsByNumeroCuenta(numero));
         return numero;

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Slf4j
@@ -41,7 +42,7 @@ public class CatalogoPagoValidator {
                 ));
 
         if (doc.getFechaActualizacion() != null &&
-                doc.getFechaActualizacion().isBefore(LocalDateTime.now().minusHours(maxAntiguedadHoras))) {
+                doc.getFechaActualizacion().isBefore(LocalDateTime.now(ZoneId.systemDefault()).minusHours(maxAntiguedadHoras))) {
             log.warn("Catálogo de GestoPago desactualizado. Última sincronización: {}", doc.getFechaActualizacion());
             throw new CatalogoNoDisponibleException(
                     "El catálogo de productos de servicios se encuentra desactualizado. Intente más tarde."

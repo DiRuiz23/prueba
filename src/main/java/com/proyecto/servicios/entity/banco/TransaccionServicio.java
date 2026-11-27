@@ -83,7 +83,7 @@ public class TransaccionServicio {
     @Column(name = "codigo_respuesta", length = 20)
     private String codigoRespuesta;
 
-    @Column(name = "mensaje_respuesta", length = 255)
+    @Column(name = "mensaje_respuesta", columnDefinition = "TEXT")
     private String mensajeRespuesta;
 
     @Enumerated(EnumType.STRING)

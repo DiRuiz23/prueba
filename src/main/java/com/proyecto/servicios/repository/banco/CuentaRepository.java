@@ -26,6 +26,7 @@ public interface CuentaRepository extends JpaRepository<Cuenta, Long>, JpaSpecif
 
     boolean existsByNumeroCuenta(String numeroCuenta);
 
+    @EntityGraph(attributePaths = "cliente")
     List<Cuenta> findByClienteId(Long clienteId);
 
     /** Búsqueda dinámica paginada; el cliente se obtiene en la misma consulta (evita N+1). */
@@ -38,7 +39,7 @@ public interface CuentaRepository extends JpaRepository<Cuenta, Long>, JpaSpecif
      * Débito atómico con validación condicional de saldo suficiente y cuenta activa.
      * Retorna 1 si se aplicó el débito, 0 si los fondos son insuficientes o la cuenta no está activa.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Cuenta c SET c.saldo = c.saldo - :monto, c.fechaActualizacion = CURRENT_TIMESTAMP " +
            "WHERE c.id = :id AND c.estatus = com.proyecto.servicios.enums.EstatusCuenta.ACTIVA AND c.saldo >= :monto")
     int debitarSaldoAtomico(@Param("id") Long id, @Param("monto") BigDecimal monto);
@@ -46,7 +47,7 @@ public interface CuentaRepository extends JpaRepository<Cuenta, Long>, JpaSpecif
     /**
      * Reembolso o abono simétrico atómico a la cuenta.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Cuenta c SET c.saldo = c.saldo + :monto, c.fechaActualizacion = CURRENT_TIMESTAMP " +
            "WHERE c.id = :id AND c.estatus = com.proyecto.servicios.enums.EstatusCuenta.ACTIVA")
     int reembolsarSaldoAtomico(@Param("id") Long id, @Param("monto") BigDecimal monto);

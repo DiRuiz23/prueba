@@ -34,6 +34,13 @@ public class Usuario {
     @Builder.Default
     private Boolean activo = true;
 
+    @Column(name = "totp_secret", length = 64)
+    private String totpSecret;
+
+    @Column(name = "totp_habilitado", nullable = false)
+    @Builder.Default
+    private Boolean totpHabilitado = false;
+
     @CreationTimestamp
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private OffsetDateTime fechaCreacion;

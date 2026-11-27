@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.StringReader;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 
 /**
@@ -32,6 +33,8 @@ import java.util.Optional;
 @Service
 @Slf4j
 public class GestoPagoProductosServiceImpl implements GestoPagoProductosService {
+
+    private static final String LOG_ERROR_FORMAT = "{}: {}";
 
     private final GestoPagoProductosClient gestoPagoProductosClient;
     private final GestoPagoTokenService gestoPagoTokenService;
@@ -84,8 +87,8 @@ public class GestoPagoProductosServiceImpl implements GestoPagoProductosService 
             CatProductDocument documento = new CatProductDocument();
             documento.setProducts(catProductXml.getProducts());
             documento.setStatus(catProductXml.getStatus());
-            documento.setFechaCreacion(LocalDateTime.now());
-            documento.setFechaActualizacion(LocalDateTime.now());
+            documento.setFechaCreacion(LocalDateTime.now(ZoneId.systemDefault()));
+            documento.setFechaActualizacion(LocalDateTime.now(ZoneId.systemDefault()));
             documento.setFuente("GESTOPAGO");
 
             catProductRepository.save(documento);
@@ -93,13 +96,13 @@ public class GestoPagoProductosServiceImpl implements GestoPagoProductosService 
             log.info("Catálogo de productos GestoPago actualizado correctamente");
 
         } catch (FeignException.Unauthorized | FeignException.Forbidden e) {
-            log.error("{}: {}", GestoPagoEnum.ERROR_AUTENTICACION.getMensaje(), e.getMessage(), e);
+            log.error(LOG_ERROR_FORMAT, GestoPagoEnum.ERROR_AUTENTICACION.getMensaje(), e.getMessage(), e);
         } catch (FeignException e) {
             log.error("{} - Status HTTP {}: {}", GestoPagoEnum.ERROR_SERVICIO_EXTERNO.getMensaje(), e.status(), e.getMessage(), e);
         } catch (JAXBException e) {
-            log.error("{}: {}", GestoPagoEnum.ERROR_PARSEO_XML.getMensaje(), e.getMessage(), e);
+            log.error(LOG_ERROR_FORMAT, GestoPagoEnum.ERROR_PARSEO_XML.getMensaje(), e.getMessage(), e);
         } catch (Exception e) {
-            log.error("{}: {}", GestoPagoEnum.ERROR_COMUNICACION.getMensaje(), e.getMessage(), e);
+            log.error(LOG_ERROR_FORMAT, GestoPagoEnum.ERROR_COMUNICACION.getMensaje(), e.getMessage(), e);
         }
     }
 
@@ -118,7 +121,7 @@ public class GestoPagoProductosServiceImpl implements GestoPagoProductosService 
             GestoPagoProductListResponse respuestaError = new GestoPagoProductListResponse();
             respuestaError.setStatus("ERROR");
             respuestaError.setMensaje(GestoPagoEnum.SIN_CATALOGO.getMensaje());
-            respuestaError.setFechaConsulta(LocalDateTime.now());
+            respuestaError.setFechaConsulta(LocalDateTime.now(ZoneId.systemDefault()));
             return respuestaError;
         }
 

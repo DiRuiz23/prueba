@@ -2,12 +2,16 @@ package com.proyecto.servicios.dto.request.banco;
 
 import com.proyecto.servicios.dto.request.comun.PatronesValidacion;
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * Request para crear o asociar un usuario de acceso a un cliente existente.
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class AgregarUsuarioRequest {
 
     @NotNull(message = "El ID del cliente es obligatorio")

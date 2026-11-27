@@ -7,14 +7,19 @@ import com.proyecto.servicios.enums.EstatusTransaccionServicio;
 import com.proyecto.servicios.repository.banco.TransaccionServicioRepository;
 import com.proyecto.servicios.service.banco.ConciliacionService;
 import com.proyecto.servicios.service.banco.CuentaDebitoService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService.NotificacionTransaccionData;
 import com.proyecto.servicios.service.gestopago.GestoPagoTxGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -29,10 +34,13 @@ public class ConciliacionServiceImpl implements ConciliacionService {
     @Value("${gestopago.tx.unidad:083}")
     private String unidad;
 
+    @Autowired(required = false)
+    private NotificacionTransaccionService notificacionTransaccionService;
+
     @Override
     @Scheduled(fixedDelayString = "${gestopago.conciliacion.intervalo-ms:30000}", initialDelay = 15000)
     public int procesarTransaccionesEnConciliacion() {
-        OffsetDateTime ahora = OffsetDateTime.now();
+        OffsetDateTime ahora = OffsetDateTime.now(ZoneId.systemDefault());
         List<TransaccionServicio> candidatas = cuentaDebitoService
                 .reclamarCandidatasConciliacion(ahora, 20);
 
@@ -98,13 +106,67 @@ public class ConciliacionServiceImpl implements ConciliacionService {
             // Según la documentación oficial: '06' en confirmTx significa que la transacción fue APLICADA
             log.info("confirmTx retornó 06: La transacción fue aplicada exitosamente. txId={}", tx.getId());
             cuentaDebitoService.confirmarExito(tx, confirmXml);
+            notificarResultadoConciliacion(
+                    tx,
+                    true,
+                    tx.getSaldoPosterior(),
+                    confirmXml != null ? confirmXml.getNumAutorizacion() : null,
+                    confirmXml != null ? confirmXml.getIdTx() : null,
+                    confirmXml != null && confirmXml.getTexto() != null
+                            ? confirmXml.getTexto()
+                            : "Operación aplicada tras conciliación"
+            );
         } else if ("70".equals(codigo)) {
             // Según la documentación oficial: '70' en confirmTx significa que la transacción NO fue aplicada
             log.info("confirmTx retornó 70: La transacción no fue aplicada. Se reembolsa el dinero. txId={}", tx.getId());
-            cuentaDebitoService.ejecutarReembolsoConciliacion(tx, "Conciliación determinó transacción no aplicada (código 70)");
+            String motivoRechazo = "Conciliación determinó transacción no aplicada (código 70)";
+            cuentaDebitoService.ejecutarReembolsoConciliacion(tx, motivoRechazo);
+            notificarResultadoConciliacion(tx, false, tx.getSaldoAnterior(), null, null, motivoRechazo);
         } else {
             // Cualquier otro código (82 o temporal) mantiene la transacción en conciliación
             reprogramarSiguienteIntento(tx, ahora);
+        }
+    }
+
+    private void notificarResultadoConciliacion(
+            TransaccionServicio tx,
+            boolean exitosa,
+            BigDecimal saldoRestante,
+            String numeroAutorizacion,
+            String idTxGestoPago,
+            String motivo
+    ) {
+        if (notificacionTransaccionService == null || tx == null) {
+            return;
+        }
+        try {
+            String correo = null;
+            if (tx.getUsuario() != null && tx.getUsuario().getCorreo() != null) {
+                correo = tx.getUsuario().getCorreo();
+            } else if (tx.getCuenta() != null && tx.getCuenta().getCliente() != null) {
+                correo = tx.getCuenta().getCliente().getCorreo();
+            }
+            if (correo == null || correo.isBlank()) {
+                return;
+            }
+            String numeroCuenta = tx.getCuenta() != null ? tx.getCuenta().getNumeroCuenta() : null;
+            BigDecimal monto = tx.getMontoDebitado() != null ? tx.getMontoDebitado() : tx.getMonto();
+            notificacionTransaccionService.notificarResultadoTransaccion(new NotificacionTransaccionData(
+                    correo,
+                    exitosa,
+                    "Pago de servicio",
+                    tx.getUpc(),
+                    numeroCuenta,
+                    tx.getTelefonoReferencia(),
+                    monto,
+                    saldoRestante,
+                    numeroAutorizacion,
+                    idTxGestoPago,
+                    motivo,
+                    tx.getFechaTransaccion()
+            ));
+        } catch (Exception e) {
+            log.warn("No se pudo preparar notificación de conciliación para txId={}: {}", tx.getId(), e.getMessage());
         }
     }
 

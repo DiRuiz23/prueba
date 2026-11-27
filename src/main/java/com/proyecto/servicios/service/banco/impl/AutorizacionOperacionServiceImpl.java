@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Objects;
 
 @Service
@@ -66,7 +67,18 @@ public class AutorizacionOperacionServiceImpl implements AutorizacionOperacionSe
             throw new PinInvalidoException("El PIN de autorización es obligatorio.");
         }
 
-        OffsetDateTime ahora = OffsetDateTime.now();
+        OffsetDateTime ahora = OffsetDateTime.now(ZoneId.systemDefault());
+        verificarBloqueo(cuenta, ahora);
+
+        String hashAValidar = obtenerHashValidacion(cuenta);
+        if (passwordEncoder.matches(pinIngresado, hashAValidar)) {
+            limpiarIntentosSiAplica(cuenta);
+        } else {
+            manejarPinFallido(cuenta, ahora);
+        }
+    }
+
+    private void verificarBloqueo(Cuenta cuenta, OffsetDateTime ahora) {
         if (cuenta.getBloqueoPinHasta() != null && cuenta.getBloqueoPinHasta().isAfter(ahora)) {
             log.warn("Intento de operación con cuenta bloqueada por PIN. cuentaId={}", cuenta.getId());
             throw new PinBloqueadoException(
@@ -74,47 +86,47 @@ public class AutorizacionOperacionServiceImpl implements AutorizacionOperacionSe
                             cuenta.getBloqueoPinHasta()
             );
         }
+    }
 
+    private String obtenerHashValidacion(Cuenta cuenta) {
         String pinHash = cuenta.getPinHash();
-        String hashAValidar;
         if (pinHash != null && !pinHash.isBlank()) {
-            hashAValidar = pinHash;
-        } else {
-            // Fallback para cuentas sin PIN dedicado configurado: validar con contraseña de usuario
-            Usuario usuario = usuarioRepository.findByClienteId(cuenta.getCliente().getId())
-                    .orElseThrow(() -> new ReglaNegocioException("No se encontró usuario de acceso para la cuenta."));
-            hashAValidar = usuario.getPassword();
+            return pinHash;
+        }
+        Usuario usuario = usuarioRepository.findByClienteId(cuenta.getCliente().getId())
+                .orElseThrow(() -> new ReglaNegocioException("No se encontró usuario de acceso para la cuenta."));
+        return usuario.getPassword();
+    }
+
+    private void limpiarIntentosSiAplica(Cuenta cuenta) {
+        if ((cuenta.getIntentosFallidosPin() != null && cuenta.getIntentosFallidosPin() > 0)
+                || cuenta.getBloqueoPinHasta() != null) {
+            cuenta.setIntentosFallidosPin(0);
+            cuenta.setBloqueoPinHasta(null);
+            cuentaRepository.save(cuenta);
+        }
+    }
+
+    private void manejarPinFallido(Cuenta cuenta, OffsetDateTime ahora) {
+        int intentos = (cuenta.getIntentosFallidosPin() == null ? 0 : cuenta.getIntentosFallidosPin()) + 1;
+        cuenta.setIntentosFallidosPin(intentos);
+
+        if (intentos >= MAX_INTENTOS_PIN) {
+            cuenta.setBloqueoPinHasta(ahora.plusMinutes(MINUTOS_BLOQUEO));
+            cuentaRepository.save(cuenta);
+            log.warn("Cuenta bloqueada por rebasar intentos de PIN/credencial. cuentaId={}, bloqueoHasta={}",
+                    cuenta.getId(), cuenta.getBloqueoPinHasta());
+            throw new PinBloqueadoException(String.format(
+                    "Ha superado los %d intentos permitidos. Su PIN transaccional ha sido bloqueado por %d minutos.",
+                    MAX_INTENTOS_PIN, MINUTOS_BLOQUEO
+            ));
         }
 
-        if (passwordEncoder.matches(pinIngresado, hashAValidar)) {
-            // Éxito: limpiar intentos si existían
-            if ((cuenta.getIntentosFallidosPin() != null && cuenta.getIntentosFallidosPin() > 0)
-                    || cuenta.getBloqueoPinHasta() != null) {
-                cuenta.setIntentosFallidosPin(0);
-                cuenta.setBloqueoPinHasta(null);
-                cuentaRepository.save(cuenta);
-            }
-        } else {
-            int intentos = (cuenta.getIntentosFallidosPin() == null ? 0 : cuenta.getIntentosFallidosPin()) + 1;
-            cuenta.setIntentosFallidosPin(intentos);
-
-            if (intentos >= MAX_INTENTOS_PIN) {
-                cuenta.setBloqueoPinHasta(ahora.plusMinutes(MINUTOS_BLOQUEO));
-                cuentaRepository.save(cuenta);
-                log.warn("Cuenta bloqueada por rebasar intentos de PIN/credencial. cuentaId={}, bloqueoHasta={}",
-                        cuenta.getId(), cuenta.getBloqueoPinHasta());
-                throw new PinBloqueadoException(String.format(
-                        "Ha superado los %d intentos permitidos. Su PIN transaccional ha sido bloqueado por %d minutos.",
-                        MAX_INTENTOS_PIN, MINUTOS_BLOQUEO
-                ));
-            } else {
-                cuentaRepository.save(cuenta);
-                int restantes = MAX_INTENTOS_PIN - intentos;
-                throw new PinInvalidoException(String.format(
-                        "El PIN de autorización es incorrecto. Intentos restantes antes de bloqueo: %d.",
-                        restantes
-                ));
-            }
-        }
+        cuentaRepository.save(cuenta);
+        int restantes = MAX_INTENTOS_PIN - intentos;
+        throw new PinInvalidoException(String.format(
+                "El PIN de autorización es incorrecto. Intentos restantes antes de bloqueo: %d.",
+                restantes
+        ));
     }
 }

@@ -47,3 +47,8 @@ bin/
 .env.*
 !.env.example
 application-local*.properties
+
+### Node / Angular (web-app) ###
+node_modules/
+web-app/dist/
+web-app/.angular/

@@ -13,6 +13,9 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long>, JpaSpec
     /** Busca un usuario por su correo electrónico (único por regla de negocio). */
     Optional<Usuario> findByCorreo(String correo);
 
+    /** Busca un usuario ignorando mayúsculas/minúsculas en el correo. */
+    Optional<Usuario> findByCorreoIgnoreCase(String correo);
+
     /** Verifica si existe un usuario con el correo indicado. */
     boolean existsByCorreo(String correo);
 

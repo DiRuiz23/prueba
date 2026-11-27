@@ -1,6 +1,5 @@
 package com.proyecto.servicios.security;
 
-import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -8,10 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.client.model.CatProductXml.ProductoItem;
 import com.proyecto.servicios.client.model.GestoPagoTxResponseXml;
 import com.proyecto.servicios.dto.request.banco.PagoServicioRequest;
-import com.proyecto.servicios.entity.banco.Cliente;
 import com.proyecto.servicios.entity.banco.Cuenta;
 import com.proyecto.servicios.entity.banco.TransaccionServicio;
-import com.proyecto.servicios.entity.banco.Usuario;
 import com.proyecto.servicios.enums.EstatusCuenta;
 import com.proyecto.servicios.enums.EstatusTransaccionServicio;
 import com.proyecto.servicios.repository.banco.TransaccionServicioRepository;
@@ -34,10 +31,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 

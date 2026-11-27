@@ -27,6 +27,14 @@ public class JwtService {
         return generarToken(new HashMap<>(), userDetails);
     }
 
+    public String generarToken(UserDetails userDetails, String jti) {
+        Map<String, Object> extraClaims = new HashMap<>();
+        if (jti != null && !jti.isBlank()) {
+            extraClaims.put("jti", jti);
+        }
+        return generarToken(extraClaims, userDetails);
+    }
+
     public String generarToken(Map<String, Object> extraClaims, UserDetails userDetails) {
         return Jwts.builder()
                 .claims(extraClaims)
@@ -44,6 +52,10 @@ public class JwtService {
 
     public String extraerUsername(String token) {
         return extraerClaim(token, Claims::getSubject);
+    }
+
+    public String extraerJti(String token) {
+        return extraerClaim(token, claims -> claims.get("jti", String.class));
     }
 
     public <T> T extraerClaim(String token, Function<Claims, T> claimsResolver) {

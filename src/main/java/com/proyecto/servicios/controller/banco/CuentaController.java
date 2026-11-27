@@ -12,7 +12,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/cuentas")
@@ -21,6 +24,14 @@ import org.springframework.web.bind.annotation.*;
 public class CuentaController {
 
     private final CuentaService cuentaService;
+
+    @GetMapping("/mias")
+    @Operation(summary = "Consultar las cuentas bancarias del usuario autenticado")
+    public ResponseEntity<GenericResponse<List<CuentaResponse>>> obtenerMisCuentas(Authentication authentication) {
+        String correo = authentication != null ? authentication.getName() : "";
+        List<CuentaResponse> cuentas = cuentaService.obtenerMisCuentas(correo);
+        return ResponseEntity.ok(GenericResponse.exito("Cuentas consultadas correctamente", cuentas));
+    }
 
     @PostMapping
     @Operation(summary = "Crear una cuenta bancaria adicional para un cliente activo existente")

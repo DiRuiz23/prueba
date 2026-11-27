@@ -13,26 +13,33 @@ import com.proyecto.servicios.enums.EstatusTransaccionServicio;
 import com.proyecto.servicios.exception.RecursoNoEncontradoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.banco.IdempotenciaConflictoException;
+import com.proyecto.servicios.exception.banco.SaldoInsuficienteException;
 import com.proyecto.servicios.exception.gestopago.ProveedorException;
 import com.proyecto.servicios.exception.gestopago.ResultadoInciertoException;
 import com.proyecto.servicios.repository.banco.TransaccionServicioRepository;
 import com.proyecto.servicios.repository.banco.UsuarioRepository;
 import com.proyecto.servicios.service.banco.AutorizacionOperacionService;
 import com.proyecto.servicios.service.banco.CuentaDebitoService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService;
+import com.proyecto.servicios.service.banco.NotificacionTransaccionService.NotificacionTransaccionData;
 import com.proyecto.servicios.service.banco.PagoServicioService;
 import com.proyecto.servicios.service.banco.strategy.ValidacionMontoResult;
 import com.proyecto.servicios.service.gestopago.CatalogoPagoValidator;
 import com.proyecto.servicios.service.gestopago.GestoPagoTxGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -41,6 +48,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class PagoServicioServiceImpl implements PagoServicioService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final AutorizacionOperacionService autorizacionOperacionService;
     private final CatalogoPagoValidator catalogoPagoValidator;
@@ -52,6 +61,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
     @Value("${gestopago.tx.unidad:083}")
     private String unidad;
+
+    @Autowired(required = false)
+    private NotificacionTransaccionService notificacionTransaccionService;
 
     @Override
     public PagoServicioResponse realizarPagoServicio(PagoServicioRequest request, String correoAutenticado, String idempotencyKey) {
@@ -103,12 +115,8 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         );
 
         // 4. Generar identificadores únicos y datos canónicos
-        String horaLocal = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now());
-        // UPC: máximo 15 caracteres (ejemplo: GP + 12 dígitos)
-        String upc = "GP" + (System.currentTimeMillis() % 100000000000L) + String.format("%02d", (int)(Math.random() * 100));
-        if (upc.length() > 15) {
-            upc = upc.substring(0, 15);
-        }
+        String horaLocal = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now(ZoneId.systemDefault()));
+        String upc = generarUpcUnico();
 
         GestoPagoSendTxPayload payload = GestoPagoSendTxPayload.builder()
                 .idProducto(request.getIdProducto())
@@ -133,11 +141,31 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         }
 
         Usuario usuario = usuarioRepository.findByCorreo(correoAutenticado).orElse(null);
+        String nombreServicio = resolverNombreServicio(producto);
 
         // 5. PASO 1 (TX CORTA PREVIA): Debitar saldo atómicamente e insertar transacción PENDIENTE y ledger
-        TransaccionServicio tx = cuentaDebitoService.reservarFondosYRegistrar(
-                cuenta, usuario, request, montos, idempotencyKey, requestHash, upc, horaLocal, payloadHash
-        );
+        TransaccionServicio tx;
+        try {
+            tx = cuentaDebitoService.reservarFondosYRegistrar(
+                    cuenta, usuario, request, montos, idempotencyKey, requestHash, upc, horaLocal, payloadHash
+            );
+        } catch (SaldoInsuficienteException e) {
+            notificarResultado(
+                    correoAutenticado,
+                    false,
+                    nombreServicio,
+                    null,
+                    cuenta.getNumeroCuenta(),
+                    request.getTelefonoReferencia(),
+                    montos.montoDebitadoTotal(),
+                    cuenta.getSaldo(),
+                    null,
+                    null,
+                    e.getMessage(),
+                    OffsetDateTime.now(ZoneId.systemDefault())
+            );
+            throw e;
+        }
 
         // 6. PASO 2: Llamada HTTP al proveedor FUERA de cualquier transacción de base de datos
         GestoPagoTxResponseXml txXml;
@@ -162,6 +190,23 @@ public class PagoServicioServiceImpl implements PagoServicioService {
             log.info("Pago de servicio completado con éxito. txId={}, upc={}, folioGestoPago={}",
                     tx.getId(), upc, txXml.getIdTx());
 
+            String mensajeExito = txXml.getTexto() != null ? txXml.getTexto() : "Operación realizada con éxito";
+            OffsetDateTime fechaExito = OffsetDateTime.now(ZoneId.systemDefault());
+            notificarResultado(
+                    correoAutenticado,
+                    true,
+                    nombreServicio,
+                    upc,
+                    cuenta.getNumeroCuenta(),
+                    request.getTelefonoReferencia(),
+                    montos.montoDebitadoTotal(),
+                    tx.getSaldoPosterior(),
+                    txXml.getNumAutorizacion(),
+                    txXml.getIdTx(),
+                    mensajeExito,
+                    fechaExito
+            );
+
             return PagoServicioResponse.builder()
                     .idTransaccion(tx.getId())
                     .upc(upc)
@@ -171,21 +216,37 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                     .montoDebitado(montos.montoDebitadoTotal())
                     .saldoRestante(tx.getSaldoPosterior())
                     .telefonoReferencia(request.getTelefonoReferencia())
+                    .idProducto(request.getIdProducto())
+                    .idServicio(request.getIdServicio())
                     .estatus("EXITOSA")
-                    .mensaje(txXml.getTexto() != null ? txXml.getTexto() : "Operación realizada con éxito")
-                    .fechaTransaccion(OffsetDateTime.now())
+                    .mensaje(mensajeExito)
+                    .fechaTransaccion(fechaExito)
                     .build();
         } else {
-            String motivo = txXml != null && txXml.getTexto() != null
-                    ? txXml.getTexto()
-                    : "Transacción rechazada por el proveedor";
+            String textoCrudo = txXml != null ? txXml.getTexto() : null;
             String codigo = txXml != null ? txXml.getCodigo() : "ERR";
+            String motivo = sanitizarMotivoProveedor(codigo, textoCrudo);
 
-            log.warn("Rechazo definitivo del proveedor (código {}). Reembolsando saldo. txId={}",
-                    codigo, tx.getId());
+            log.warn("Rechazo definitivo del proveedor (código {}). Reembolsando saldo. txId={}, detalleProveedor={}",
+                    codigo, tx.getId(), textoCrudo);
             cuentaDebitoService.registrarFalloYReembolsar(tx, txXml, motivo);
 
-            throw new ProveedorException("Transacción rechazada por el proveedor: " + motivo + " (Código: " + codigo + ")", codigo);
+            notificarResultado(
+                    correoAutenticado,
+                    false,
+                    nombreServicio,
+                    upc,
+                    cuenta.getNumeroCuenta(),
+                    request.getTelefonoReferencia(),
+                    montos.montoDebitadoTotal(),
+                    tx.getSaldoAnterior() != null ? tx.getSaldoAnterior() : cuenta.getSaldo(),
+                    null,
+                    txXml != null ? txXml.getIdTx() : null,
+                    motivo,
+                    tx.getFechaTransaccion() != null ? tx.getFechaTransaccion() : OffsetDateTime.now(ZoneId.systemDefault())
+            );
+
+            throw new ProveedorException(construirMensajeExcepcionProveedor(motivo, codigo), codigo, tx);
         }
     }
 
@@ -196,10 +257,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
         // Validar titularidad
         Usuario usuario = usuarioRepository.findByCorreo(correoAutenticado).orElse(null);
-        if (usuario != null && tx.getCuenta() != null && tx.getCuenta().getCliente() != null) {
-            if (!tx.getCuenta().getCliente().getId().equals(usuario.getCliente().getId())) {
-                throw new RecursoNoEncontradoException("No se encontró la transacción solicitada.");
-            }
+        if (usuario != null && tx.getCuenta() != null && tx.getCuenta().getCliente() != null
+                && !tx.getCuenta().getCliente().getId().equals(usuario.getCliente().getId())) {
+            throw new RecursoNoEncontradoException("No se encontró la transacción solicitada.");
         }
         return construirRespuestaDesdeEntidad(tx);
     }
@@ -218,10 +278,88 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .montoDebitado(tx.getMontoDebitado())
                 .saldoRestante(tx.getSaldoPosterior())
                 .telefonoReferencia(tx.getTelefonoReferencia())
+                .idProducto(tx.getIdProducto())
+                .idServicio(tx.getIdServicio())
                 .estatus(estatus)
                 .mensaje(tx.getMensajeRespuesta() != null ? tx.getMensajeRespuesta() : "Estado actual de la transacción")
                 .fechaTransaccion(tx.getFechaTransaccion())
                 .build();
+    }
+
+    private String resolverNombreServicio(ProductoItem producto) {
+        if (producto == null) {
+            return "Pago de servicio";
+        }
+        if (producto.getProducto() != null && !producto.getProducto().isBlank()) {
+            return producto.getProducto().trim();
+        }
+        if (producto.getServicio() != null && !producto.getServicio().isBlank()) {
+            return producto.getServicio().trim();
+        }
+        return "Pago de servicio";
+    }
+
+    private void notificarResultado(
+            String correoDestino,
+            boolean exitosa,
+            String nombreServicio,
+            String upc,
+            String numeroCuenta,
+            String telefonoReferencia,
+            BigDecimal monto,
+            BigDecimal saldoRestante,
+            String numeroAutorizacion,
+            String idTxGestoPago,
+            String motivo,
+            OffsetDateTime fechaTransaccion
+    ) {
+        if (notificacionTransaccionService == null) {
+            return;
+        }
+        notificacionTransaccionService.notificarResultadoTransaccion(new NotificacionTransaccionData(
+                correoDestino,
+                exitosa,
+                nombreServicio,
+                upc,
+                numeroCuenta,
+                telefonoReferencia,
+                monto,
+                saldoRestante,
+                numeroAutorizacion,
+                idTxGestoPago,
+                motivo,
+                fechaTransaccion
+        ));
+    }
+
+    private String construirMensajeExcepcionProveedor(String motivo, String codigo) {
+        if ("Transacción rechazada por el proveedor".equalsIgnoreCase(motivo)) {
+            return "Transacción rechazada por el proveedor (Código: " + codigo + ")";
+        }
+        return "Transacción rechazada por el proveedor: " + motivo + " (Código: " + codigo + ")";
+    }
+
+    private String sanitizarMotivoProveedor(String codigo, String textoCrudo) {
+        if (textoCrudo == null || textoCrudo.isBlank()) {
+            return "Transacción rechazada por el proveedor";
+        }
+        String limpio = textoCrudo.trim();
+        if ("55".equals(codigo) || limpio.contains("validIPS=") || limpio.contains("validationCompleted=false")) {
+            return "Transacción rechazada por el proveedor";
+        }
+        return limpio.length() > 240 ? limpio.substring(0, 240) + "..." : limpio;
+    }
+
+    private String generarUpcUnico() {
+        String upc;
+        int intentos = 0;
+        do {
+            int primeraParte = 10_000 + SECURE_RANDOM.nextInt(90_000);
+            int segundaParte = SECURE_RANDOM.nextInt(100_000);
+            upc = String.format("%05d%05d", primeraParte, segundaParte);
+            intentos++;
+        } while (transaccionRepository.existsByUpc(upc) && intentos < 10);
+        return upc;
     }
 
     private String calcularSha256(String entrada) {

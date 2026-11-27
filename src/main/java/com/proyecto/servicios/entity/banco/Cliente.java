@@ -67,7 +67,7 @@ public class Cliente {
     @Column(nullable = false, length = 100)
     private String ocupacion;
 
-    @Column(nullable = false, length = 100)
+    @Column(length = 100)
     private String empresa;
 
     @Column(name = "ingreso_mensual", nullable = false, precision = 15, scale = 2)
